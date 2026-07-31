@@ -13,12 +13,66 @@ const VTPASS_BASE_URL = process.env.VTPASS_ENV === "production"
   ? "https://vtpass.com/api" 
   : "https://sandbox.vtpass.com/api";
 
-// Health Check
+const requireAuth = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized: Missing token header" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      return res.status(401).json({ error: "Unauthorized: Invalid or expired token" });
+    }
+    req.user = user;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Auth verification failed" });
+  }
+};
+
 app.get("/health", (req, res) => res.json({ status: "OK", timestamp: new Date() }));
 
-// GET /services/variations - Fetch Data/Cable Plans
+app.post("/services/verify", requireAuth, async (req, res) => {
+  const { billCode, customerTarget, type } = req.body; 
+
+  if (!billCode || !customerTarget) {
+    return res.status(400).json({ error: "billCode and customerTarget are required" });
+  }
+
+  try {
+    const payload = {
+      serviceID: billCode,
+      billersCode: customerTarget
+    };
+    if (type) payload.type = type;
+
+    const response = await axios.post(`${VTPASS_BASE_URL}/merchant-verify`, payload, {
+      headers: {
+        "api-key": process.env.VTPASS_API_KEY,
+        "secret-key": process.env.VTPASS_SECRET_KEY
+      }
+    });
+
+    const data = response.data;
+    if (data.code === "000" && data.content) {
+      return res.json({
+        success: true,
+        customerName: data.content.Customer_Name || data.content.name || "Customer Validated",
+        raw: data.content
+      });
+    }
+
+    return res.status(400).json({ success: false, error: data.response_description || "Validation failed" });
+  } catch (err) {
+    return res.status(500).json({ error: "Verification service error", details: err.message });
+  }
+});
+
 app.get("/services/variations", async (req, res) => {
-  const { serviceID } = req.query; // e.g., mtn-data, dstv
+  const { serviceID } = req.query;
   if (!serviceID) return res.status(400).json({ error: "serviceID query param is required" });
 
   try {
@@ -43,9 +97,9 @@ app.get("/services/variations", async (req, res) => {
   }
 });
 
-// POST /orders - Create Order & Pay PSP
-app.post("/orders", async (req, res) => {
-  const { userId, serviceType, customerTarget, amount, billCode, variationCode } = req.body;
+app.post("/orders", requireAuth, async (req, res) => {
+  const userId = req.user.id;
+  const { serviceType, customerTarget, amount, billCode, variationCode } = req.body;
 
   const { data: order, error: orderErr } = await supabase
     .from("orders")
@@ -53,9 +107,21 @@ app.post("/orders", async (req, res) => {
     .select()
     .single();
 
-  if (orderErr) return res.status(500).json({ error: "Database error initializing order", details: orderErr });
+  if (orderErr) return res.status(500).json({ error: "Database error initializing order" });
 
   const requestId = order.order_id;
+
+  const { data: debitSuccess, error: debitErr } = await supabase.rpc("debit_user_wallet", {
+    p_user_id: userId,
+    p_amount: amount,
+    p_order_id: requestId,
+    p_reference: `DEBIT-${requestId}`
+  });
+
+  if (debitErr || !debitSuccess) {
+    await supabase.from("orders").update({ status: "failed" }).eq("order_id", requestId);
+    return res.status(400).json({ error: "Insufficient wallet balance" });
+  }
 
   try {
     const pspPayload = {
@@ -86,20 +152,34 @@ app.post("/orders", async (req, res) => {
 
     if (pspData.code === "000") {
       await supabase.from("orders").update({ status: "success" }).eq("order_id", requestId);
+      return res.json({ orderId: requestId, status: "success", message: "Order processed successfully" });
+    } else if (pspData.code === "099") {
+      return res.json({ orderId: requestId, status: "pending", message: "Order processing with provider" });
+    } else {
+      await supabase.from("orders").update({ status: "failed" }).eq("order_id", requestId);
+      await supabase.rpc("refund_user_wallet", {
+        p_user_id: userId,
+        p_amount: amount,
+        p_order_id: requestId,
+        p_reference: `REFUND-${requestId}`
+      });
+
+      return res.status(400).json({ error: "Transaction failed at gateway. Wallet refunded.", pspCode: pspData.code });
     }
 
-    return res.json({
-      orderId: requestId,
-      status: pspData.code === "000" ? "success" : "pending",
-      message: "Order processed"
-    });
   } catch (err) {
     await supabase.from("orders").update({ status: "failed" }).eq("order_id", requestId);
-    return res.status(500).json({ error: "PSP execution failed", details: err.message });
+    await supabase.rpc("refund_user_wallet", {
+      p_user_id: userId,
+      p_amount: amount,
+      p_order_id: requestId,
+      p_reference: `REFUND-EXC-${requestId}`
+    });
+
+    return res.status(500).json({ error: "PSP connection error. Wallet refunded." });
   }
 });
 
-// POST /webhooks/psp - Webhook Listener with HMAC Validation
 app.post("/webhooks/psp", async (req, res) => {
   const signature = req.headers["x-vtpass-signature"];
   const secret = process.env.VTPASS_SECRET_KEY;
@@ -124,9 +204,21 @@ app.post("/webhooks/psp", async (req, res) => {
     processed: true
   }]);
 
-  const finalStatus = code === "000" ? "success" : "failed";
+  const { data: order } = await supabase.from("orders").select("*").eq("order_id", request_id).single();
+  if (!order || order.status !== "pending") return res.status(200).send("OK (Already Processed)");
 
-  await supabase.from("orders").update({ status: finalStatus, updated_at: new Date() }).eq("order_id", request_id);
+  if (code === "000") {
+    await supabase.from("orders").update({ status: "success", updated_at: new Date() }).eq("order_id", request_id);
+  } else {
+    await supabase.from("orders").update({ status: "failed", updated_at: new Date() }).eq("order_id", request_id);
+    await supabase.rpc("refund_user_wallet", {
+      p_user_id: order.user_id,
+      p_amount: order.amount,
+      p_order_id: request_id,
+      p_reference: `REFUND-WH-${request_id}`
+    });
+  }
+
   await supabase.from("psp_transactions").update({
     psp_status: code,
     receipt_data: content?.transactions ? content.transactions : null
@@ -135,8 +227,7 @@ app.post("/webhooks/psp", async (req, res) => {
   return res.status(200).send("OK");
 });
 
-// GET /orders/:orderId - Status & Polling Endpoint
-app.get("/orders/:orderId", async (req, res) => {
+app.get("/orders/:orderId", requireAuth, async (req, res) => {
   const { orderId } = req.params;
 
   const { data: order } = await supabase
@@ -159,9 +250,18 @@ app.get("/orders/:orderId", async (req, res) => {
       if (pspCheck.data.code === "000") {
         order.status = "success";
         await supabase.from("orders").update({ status: "success" }).eq("order_id", orderId);
+      } else if (pspCheck.data.code === "016" || pspCheck.data.code === "084") {
+        order.status = "failed";
+        await supabase.from("orders").update({ status: "failed" }).eq("order_id", orderId);
+        await supabase.rpc("refund_user_wallet", {
+          p_user_id: order.user_id,
+          p_amount: order.amount,
+          p_order_id: orderId,
+          p_reference: `REFUND-REQ-${orderId}`
+        });
       }
     } catch (e) {
-      // Ignore requery error during polling
+      // Requery exception handling
     }
   }
 
