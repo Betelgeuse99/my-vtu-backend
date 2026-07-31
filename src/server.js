@@ -8,13 +8,17 @@ const supabase = require("./config/supabase");
 
 const app = express();
 
-// Trust reverse proxy (Required for Render / Heroku rate-limiting)
 app.set("trust proxy", 1);
-
 app.use(cors());
-app.use(express.json({ limit: "1mb" }));
 
-// Rate Limiters
+// Capture raw body buffer for HMAC webhook validation
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  }
+}));
+
+// Global Rate Limiting
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -58,7 +62,7 @@ const requireAuth = async (req, res, next) => {
 };
 
 // Health Check
-app.get("/health", (req, res) => res.json({ status: "OK", timestamp: new Date().toISOString() }));
+app.get("/health", (_req, res) => res.json({ status: "OK", timestamp: new Date().toISOString() }));
 
 // -------------------------------------------------------------
 // 1. SERVICE VALIDATION & VARIATIONS
@@ -148,7 +152,7 @@ app.post("/wallet/initialize-funding", requireAuth, async (req, res, next) => {
 
     const squadPayload = {
       email: userEmail,
-      amount: Math.round(amount * 100), // Amount in Kobo
+      amount: Math.round(Number(amount) * 100), // Converted to Kobo
       initiate_type: "inline",
       currency: "NGN",
       transaction_ref: reference,
@@ -179,7 +183,7 @@ app.post("/wallet/initialize-funding", requireAuth, async (req, res, next) => {
 });
 
 // -------------------------------------------------------------
-// 3. ATOMIC PURCHASE ORDERS
+// 3. ATOMIC PURCHASE ORDERS (RESILIENT TIMEOUT HANDLING)
 // -------------------------------------------------------------
 app.post("/orders", requireAuth, orderLimiter, async (req, res, next) => {
   const userId = req.user.id;
@@ -246,8 +250,10 @@ app.post("/orders", requireAuth, orderLimiter, async (req, res, next) => {
         await supabase.from("orders").update({ status: "success" }).eq("order_id", requestId);
         return res.json({ orderId: requestId, status: "success", message: "Order processed successfully" });
       } else if (pspData.code === "099") {
+        // Pending status
         return res.json({ orderId: requestId, status: "pending", message: "Order processing with provider" });
       } else {
+        // Definite Failure -> Safe to Refund
         await supabase.from("orders").update({ status: "failed" }).eq("order_id", requestId);
         await supabase.rpc("refund_user_wallet", {
           p_user_id: userId,
@@ -259,17 +265,13 @@ app.post("/orders", requireAuth, orderLimiter, async (req, res, next) => {
         return res.status(400).json({ error: "Transaction failed at gateway. Wallet refunded.", pspCode: pspData.code });
       }
 
-    } catch (apiErr) {
-      // Auto-refund on gateway connection timeout/failure
-      await supabase.from("orders").update({ status: "failed" }).eq("order_id", requestId);
-      await supabase.rpc("refund_user_wallet", {
-        p_user_id: userId,
-        p_amount: amount,
-        p_order_id: requestId,
-        p_reference: `REFUND-EXC-${requestId}`
+    } catch (_apiErr) {
+      // NETWORK TIMEOUT OR UNCERTAIN FAILURE: Leave as 'pending' for Requery worker
+      return res.status(202).json({
+        orderId: requestId,
+        status: "pending",
+        message: "Order submitted. Verification in progress."
       });
-
-      return res.status(500).json({ error: "Provider service unreachable. Wallet refunded." });
     }
   } catch (err) {
     next(err);
@@ -277,17 +279,71 @@ app.post("/orders", requireAuth, orderLimiter, async (req, res, next) => {
 });
 
 // -------------------------------------------------------------
-// WEBHOOKS
+// 4. REQUERY WORKER ROUTE (SAFE RECONCILIATION FOR PENDING ORDERS)
+// -------------------------------------------------------------
+app.post("/orders/check-pending", async (_req, res, next) => {
+  try {
+    const { data: pendingOrders } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("status", "pending")
+      .limit(20);
+
+    if (!pendingOrders || pendingOrders.length === 0) {
+      return res.json({ status: "OK", processed: 0 });
+    }
+
+    let processedCount = 0;
+
+    for (const order of pendingOrders) {
+      try {
+        const pspCheck = await axios.post(`${VTPASS_BASE_URL}/requery`, { request_id: order.order_id }, {
+          headers: {
+            "api-key": process.env.VTPASS_API_KEY,
+            "secret-key": process.env.VTPASS_SECRET_KEY
+          },
+          timeout: 10000
+        });
+
+        const pspData = pspCheck.data;
+
+        if (pspData.code === "000") {
+          await supabase.from("orders").update({ status: "success", updated_at: new Date() }).eq("order_id", order.order_id);
+          processedCount++;
+        } else if (["011", "016", "084", "010"].includes(pspData.code)) {
+          // Confirmed failed statuses
+          await supabase.from("orders").update({ status: "failed", updated_at: new Date() }).eq("order_id", order.order_id);
+          await supabase.rpc("refund_user_wallet", {
+            p_user_id: order.user_id,
+            p_amount: order.amount,
+            p_order_id: order.order_id,
+            p_reference: `REFUND-REQ-${order.order_id}`
+          });
+          processedCount++;
+        }
+      } catch (_e) {
+        // Skip and retry on next poll cycle
+      }
+    }
+
+    return res.json({ status: "OK", processed: processedCount });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// -------------------------------------------------------------
+// 5. SQUADCO FUNDING WEBHOOK (HARDENED HMAC & NESTED PARSING)
 // -------------------------------------------------------------
 app.post("/webhooks/funding", async (req, res, next) => {
   try {
     const signature = req.headers["x-squad-encrypted-body"];
     const secret = process.env.SQUADCO_SECRET_KEY;
 
-    if (signature && secret) {
+    if (signature && secret && req.rawBody) {
       const expectedSignature = crypto
         .createHmac("sha512", secret)
-        .update(JSON.stringify(req.body))
+        .update(req.rawBody)
         .digest("hex")
         .toUpperCase();
 
@@ -296,31 +352,35 @@ app.post("/webhooks/funding", async (req, res, next) => {
       }
     }
 
-    const { Event, Body } = req.body;
+    // Safely extract from nested payload structures
+    const payload = req.body.Body || req.body.data || req.body;
+    const eventName = req.body.Event || req.body.event;
 
-    if (Event === "charge_successful" || req.body.event === "charge.success") {
-      const reference = Body?.transaction_ref || req.body.data?.reference;
-      const amountInKobo = Body?.amount || req.body.data?.amount;
-      const amountInNaira = amountInKobo / 100;
+    if (eventName === "charge_successful" || eventName === "charge.success") {
+      const reference = payload.transaction_ref || payload.reference;
+      const amountInKobo = payload.amount;
+      const amountInNaira = Number(amountInKobo) / 100;
 
-      const { data: deposit } = await supabase
-        .from("wallet_deposits")
-        .select("*")
-        .eq("reference", reference)
-        .single();
-
-      if (deposit && deposit.status === "pending") {
-        await supabase
+      if (reference) {
+        const { data: deposit } = await supabase
           .from("wallet_deposits")
-          .update({ status: "success", updated_at: new Date() })
-          .eq("reference", reference);
+          .select("*")
+          .eq("reference", reference)
+          .single();
 
-        await supabase.rpc("credit_user_wallet", {
-          p_user_id: deposit.user_id,
-          p_amount: amountInNaira,
-          p_reference: reference,
-          p_description: `Squadco Wallet Deposit (${reference})`
-        });
+        if (deposit && deposit.status === "pending") {
+          await supabase
+            .from("wallet_deposits")
+            .update({ status: "success", updated_at: new Date() })
+            .eq("reference", reference);
+
+          await supabase.rpc("credit_user_wallet", {
+            p_user_id: deposit.user_id,
+            p_amount: amountInNaira,
+            p_reference: reference,
+            p_description: `Squadco Wallet Deposit (${reference})`
+          });
+        }
       }
     }
 
@@ -330,15 +390,18 @@ app.post("/webhooks/funding", async (req, res, next) => {
   }
 });
 
+// -------------------------------------------------------------
+// 6. VTPASS WEBHOOK
+// -------------------------------------------------------------
 app.post("/webhooks/psp", async (req, res, next) => {
   try {
     const signature = req.headers["x-vtpass-signature"];
     const secret = process.env.VTPASS_SECRET_KEY;
 
-    if (signature && secret) {
+    if (signature && secret && req.rawBody) {
       const expectedSignature = crypto
         .createHmac("sha512", secret)
-        .update(JSON.stringify(req.body))
+        .update(req.rawBody)
         .digest("hex");
 
       if (signature !== expectedSignature) {
@@ -376,11 +439,11 @@ app.post("/webhooks/psp", async (req, res, next) => {
   }
 });
 
-// Centralized Express Error Handler
-app.use((err, req, res, _next) => {
+// Centralized Error Handler
+app.use((err, _req, res, _next) => {
   console.error("Unhandled Server Error:", err.stack || err);
   res.status(500).json({ error: "Internal Server Error", details: err.message });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Backend server running on port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => console.log(`Backend server running on port ${PORT}`));
