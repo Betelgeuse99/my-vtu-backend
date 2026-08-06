@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^6.0.2",
     "@supabase/supabase-js": "^2.111.0",
     "axios": "^1.19.0",
     "cors": "^2.8.6",
