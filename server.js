@@ -6,8 +6,13 @@ const crypto = require("crypto");
 const axios = require("axios");
 const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const cron = require("node-cron");
-const Brevo = require("@getbrevo/brevo");
 const supabase = require("./config/supabase");
+
+// -------------------------------------------------------------
+// BREVO CJS MODULE EXPORT RESOLUTION FIX
+// -------------------------------------------------------------
+const BrevoModule = require("@getbrevo/brevo");
+const Brevo = BrevoModule.default || BrevoModule;
 
 // -------------------------------------------------------------
 // 1. STARTUP ENVIRONMENT VALIDATION
@@ -29,28 +34,12 @@ if (missingVars.length > 0) {
   process.exit(1);
 }
 
-// -------------------------------------------------------------
-// 2. BREVO INITIALIZATION (SAFE V3 INSTANTIATION)
-// -------------------------------------------------------------
-let brevoApi;
-if (Brevo.TransactionalEmailsApi) {
-  brevoApi = new Brevo.TransactionalEmailsApi();
-  if (brevoApi.setApiKey && Brevo.TransactionalEmailsApiApiKeys) {
-    brevoApi.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
-  } else {
-    const defaultClient = Brevo.ApiClient.instance;
-    const apiKey = defaultClient.authentications['api-key'];
-    apiKey.apiKey = process.env.BREVO_API_KEY;
-  }
-} else {
-  const defaultClient = Brevo.ApiClient.instance;
-  const apiKey = defaultClient.authentications['api-key'];
-  apiKey.apiKey = process.env.BREVO_API_KEY;
-  brevoApi = new Brevo.TransactionalEmailsApi();
-}
+// Brevo API Initialization
+const brevoApi = new Brevo.TransactionalEmailsApi();
+brevoApi.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
 // -------------------------------------------------------------
-// 3. PRE-FLIGHT DATABASE RPC VALIDATION
+// 2. PRE-FLIGHT DATABASE RPC VALIDATION
 // -------------------------------------------------------------
 const validateDatabaseRPCs = async () => {
   try {
@@ -98,7 +87,7 @@ const validateDatabaseRPCs = async () => {
 validateDatabaseRPCs();
 
 // -------------------------------------------------------------
-// 4. EXPRESS APP SETUP
+// 3. EXPRESS APP SETUP
 // -------------------------------------------------------------
 const app = express();
 app.set("trust proxy", 1);
@@ -130,7 +119,7 @@ app.use(
 );
 
 // -------------------------------------------------------------
-// 5. RATE LIMITERS
+// 4. RATE LIMITERS
 // -------------------------------------------------------------
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -163,7 +152,7 @@ const otpLimiter = rateLimit({
 });
 
 // -------------------------------------------------------------
-// 6. CONSTANTS & AUTH MIDDLEWARE
+// 5. CONSTANTS & MIDDLEWARE
 // -------------------------------------------------------------
 const BIGISUB_BASE_URL = "https://bigisub.ng/api";
 const SERVER_BASE_URL = process.env.SERVER_BASE_URL;
@@ -188,7 +177,7 @@ const requireAuth = async (req, res, next) => {
 };
 
 // -------------------------------------------------------------
-// 7. ROUTES
+// 6. ROUTES
 // -------------------------------------------------------------
 app.get("/health", async (_req, res) => {
   try {
