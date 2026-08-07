@@ -1,8 +1,4 @@
-// Load environment variables ONLY in development (not on Render)
-if (process.env.NODE_ENV !== "production") {
-  require("dotenv").config();
-}
-
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -34,12 +30,10 @@ if (missingVars.length > 0) {
 }
 
 // -------------------------------------------------------------
-// 2. BREVO API CLIENT INITIALIZATION (SDK V3 FIX)
+// 2. BREVO INITIALIZATION (CANONICAL COMMONJS SYNTAX)
 // -------------------------------------------------------------
-const defaultClient = Brevo.ApiClient.instance;
-const apiKey = defaultClient.authentications["api-key"];
-apiKey.apiKey = process.env.BREVO_API_KEY;
 const brevoApi = new Brevo.TransactionalEmailsApi();
+brevoApi.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
 // -------------------------------------------------------------
 // 3. PRE-FLIGHT DATABASE RPC VALIDATION
@@ -83,7 +77,7 @@ const validateDatabaseRPCs = async () => {
     }
     console.log("✅ All PostgreSQL RPC functions verified successfully.");
   } catch (err) {
-    console.error("❌ Pre-flight check failed:", err.message);
+    console.error("❌ Pre-flight database check failed:", err.message);
     process.exit(1);
   }
 };
@@ -155,7 +149,7 @@ const otpLimiter = rateLimit({
 });
 
 // -------------------------------------------------------------
-// 6. CONSTANTS & MIDDLEWARE
+// 6. CONSTANTS & AUTH MIDDLEWARE
 // -------------------------------------------------------------
 const BIGISUB_BASE_URL = "https://bigisub.ng/api";
 const SERVER_BASE_URL = process.env.SERVER_BASE_URL;
