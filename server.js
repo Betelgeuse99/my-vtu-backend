@@ -8,7 +8,6 @@ const cors = require("cors");
 const helmet = require("helmet");
 const crypto = require("crypto");
 const axios = require("axios");
-const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const cron = require("node-cron");
 const supabase = require("./config/supabase");
 
@@ -123,39 +122,6 @@ app.use(
 );
 
 // -------------------------------------------------------------
-// RATE LIMITERS
-// -------------------------------------------------------------
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { success: false, error: { code: "RATE_LIMIT_EXCEEDED", message: "Too many requests." } },
-});
-app.use(globalLimiter);
-
-const keyGenerator = (req) => req.user?.id || ipKeyGenerator(req);
-
-const orderLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  keyGenerator,
-  message: { success: false, error: { code: "TOO_MANY_ORDERS", message: "Too many purchase attempts." } },
-});
-
-const fundingLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 3,
-  keyGenerator,
-  message: { success: false, error: { code: "TOO_MANY_FUNDING_ATTEMPTS", message: "Too many deposit attempts." } },
-});
-
-const otpLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 2,
-  keyGenerator,
-  message: { success: false, error: { code: "OTP_LIMIT", message: "Wait a minute before requesting another OTP." } },
-});
-
-// -------------------------------------------------------------
 // CONSTANTS & MIDDLEWARE
 // -------------------------------------------------------------
 const BIGISUB_BASE_URL = "https://bigisub.ng/api";
@@ -195,8 +161,8 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-// Send OTP via Brevo
-app.post("/auth/send-otp", otpLimiter, async (req, res, next) => {
+// Send OTP via Brevo (No Rate Limits)
+app.post("/auth/send-otp", async (req, res, next) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ success: false, error: { message: "Email is required" } });
@@ -314,7 +280,7 @@ app.get("/services/variations", async (_req, res, next) => {
 });
 
 // Initialize wallet funding (Squadco)
-app.post("/wallet/initialize-funding", requireAuth, fundingLimiter, async (req, res, next) => {
+app.post("/wallet/initialize-funding", requireAuth, async (req, res, next) => {
   try {
     const userId = req.user.id;
     const userEmail = req.user.email;
@@ -359,7 +325,7 @@ app.post("/wallet/initialize-funding", requireAuth, fundingLimiter, async (req, 
 });
 
 // Place an order (data purchase)
-app.post("/orders", requireAuth, orderLimiter, async (req, res, next) => {
+app.post("/orders", requireAuth, async (req, res, next) => {
   const userId = req.user.id;
   const { networkId, planId, customerTarget, amount } = req.body;
   const idempotencyKey = req.headers["x-idempotency-key"];
