@@ -1,4 +1,8 @@
-require("dotenv").config();
+// Load environment variables ONLY in development (not on Render)
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv").config();
+}
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -6,21 +10,21 @@ const crypto = require("crypto");
 const axios = require("axios");
 const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const cron = require("node-cron");
+const Brevo = require("@getbrevo/brevo");
 const supabase = require("./config/supabase");
 
 // -------------------------------------------------------------
-// BREVO INITIALIZATION (EXACT SIB-API-V3-SDK SYNTAX FROM DOCS)
+// 1. BREVO v6 FIX – Destructure the correct classes
 // -------------------------------------------------------------
-const SibApiV3Sdk = require('sib-api-v3-sdk');
-const defaultClient = SibApiV3Sdk.ApiClient.instance;
+const { TransactionalEmailsApi, SendSmtpEmail, TransactionalEmailsApiApiKeys } = Brevo;
+const brevoApi = new TransactionalEmailsApi();
+brevoApi.setApiKey(TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
-const apiKey = defaultClient.authentications['api-key'];
-apiKey.apiKey = process.env.BREVO_API_KEY;
-
-const brevoApi = new SibApiV3Sdk.TransactionalEmailsApi();
+// In-Memory OTP Store (email -> { code, expiresAt })
+const otpStore = new Map();
 
 // -------------------------------------------------------------
-// 1. STARTUP ENVIRONMENT VALIDATION
+// 2. ENVIRONMENT VALIDATION
 // -------------------------------------------------------------
 const REQUIRED_ENV_VARS = [
   "SUPABASE_URL",
@@ -40,7 +44,7 @@ if (missingVars.length > 0) {
 }
 
 // -------------------------------------------------------------
-// 2. PRE-FLIGHT DATABASE RPC VALIDATION
+// 3. SUPABASE RPC VALIDATION
 // -------------------------------------------------------------
 const validateDatabaseRPCs = async () => {
   try {
@@ -81,14 +85,14 @@ const validateDatabaseRPCs = async () => {
     }
     console.log("✅ All PostgreSQL RPC functions verified successfully.");
   } catch (err) {
-    console.error("❌ Pre-flight database check failed:", err.message);
+    console.error("❌ Pre-flight check failed:", err.message);
     process.exit(1);
   }
 };
 validateDatabaseRPCs();
 
 // -------------------------------------------------------------
-// 3. EXPRESS APP SETUP
+// 4. EXPRESS APP & SECURITY
 // -------------------------------------------------------------
 const app = express();
 app.set("trust proxy", 1);
@@ -120,7 +124,7 @@ app.use(
 );
 
 // -------------------------------------------------------------
-// 4. RATE LIMITERS
+// 5. RATE LIMITERS
 // -------------------------------------------------------------
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -153,7 +157,7 @@ const otpLimiter = rateLimit({
 });
 
 // -------------------------------------------------------------
-// 5. CONSTANTS & MIDDLEWARE
+// 6. CONSTANTS & MIDDLEWARE
 // -------------------------------------------------------------
 const BIGISUB_BASE_URL = "https://bigisub.ng/api";
 const SERVER_BASE_URL = process.env.SERVER_BASE_URL;
@@ -178,8 +182,10 @@ const requireAuth = async (req, res, next) => {
 };
 
 // -------------------------------------------------------------
-// 6. ROUTES
+// 7. ROUTES
 // -------------------------------------------------------------
+
+// Health check
 app.get("/health", async (_req, res) => {
   try {
     const { error } = await supabase.from("orders").select("order_id").limit(1);
@@ -190,14 +196,18 @@ app.get("/health", async (_req, res) => {
   }
 });
 
+// Send OTP via Brevo & Store in Memory
 app.post("/auth/send-otp", otpLimiter, async (req, res, next) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ success: false, error: { message: "Email is required" } });
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
 
-    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+    otpStore.set(email.toLowerCase(), { code: otpCode, expiresAt });
+
+    const sendSmtpEmail = new SendSmtpEmail();
     sendSmtpEmail.subject = `${otpCode} is your Dreamhatcher Verification Code`;
     sendSmtpEmail.sender = { name: process.env.SENDER_NAME, email: process.env.SENDER_EMAIL };
     sendSmtpEmail.to = [{ email }];
@@ -216,6 +226,78 @@ app.post("/auth/send-otp", otpLimiter, async (req, res, next) => {
   }
 });
 
+// Verify OTP Route (Fixes 404 & Saves User Profile)
+app.post("/auth/verify-otp", async (req, res, next) => {
+  try {
+    const { email, otp, full_name, phone_number } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ success: false, error: { message: "Email and OTP are required" } });
+    }
+
+    const storedData = otpStore.get(email.toLowerCase());
+
+    if (!storedData) {
+      return res.status(400).json({ success: false, error: { message: "No OTP found. Request a new one." } });
+    }
+
+    if (Date.now() > storedData.expiresAt) {
+      otpStore.delete(email.toLowerCase());
+      return res.status(400).json({ success: false, error: { message: "OTP has expired." } });
+    }
+
+    if (storedData.code !== otp.trim()) {
+      return res.status(400).json({ success: false, error: { message: "Invalid OTP code." } });
+    }
+
+    otpStore.delete(email.toLowerCase());
+
+    const { data: userProfile, error: dbErr } = await supabase
+      .from("profiles")
+      .upsert(
+        [
+          {
+            email: email.toLowerCase(),
+            full_name: full_name || null,
+            phone_number: phone_number || null,
+            updated_at: new Date().toISOString(),
+          },
+        ],
+        { onConflict: "email" }
+      )
+      .select()
+      .single();
+
+    if (dbErr) {
+      console.error("Database insert error:", dbErr);
+      return res.status(500).json({ success: false, error: { message: "Profile creation error: " + dbErr.message } });
+    }
+
+    return res.json({
+      success: true,
+      message: "Verification successful",
+      user: userProfile,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Payment callback (HTML response)
+app.get("/payment-callback", (req, res) => {
+  const { reference } = req.query;
+  res.send(`
+    <html>
+      <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+        <h2>Payment Processed</h2>
+        <p>Reference: <strong>${reference || "N/A"}</strong></p>
+        <p>Your wallet balance will update automatically once confirmed.</p>
+      </body>
+    </html>
+  `);
+});
+
+// Fetch data plans (variations)
 app.get("/services/variations", async (_req, res, next) => {
   try {
     const response = await axios.get(`${BIGISUB_BASE_URL}/data-plans`, {
@@ -228,6 +310,7 @@ app.get("/services/variations", async (_req, res, next) => {
   }
 });
 
+// Initialize wallet funding (Squadco)
 app.post("/wallet/initialize-funding", requireAuth, fundingLimiter, async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -272,6 +355,7 @@ app.post("/wallet/initialize-funding", requireAuth, fundingLimiter, async (req, 
   }
 });
 
+// Place an order (data purchase)
 app.post("/orders", requireAuth, orderLimiter, async (req, res, next) => {
   const userId = req.user.id;
   const { networkId, planId, customerTarget, amount } = req.body;
@@ -345,6 +429,7 @@ app.post("/orders", requireAuth, orderLimiter, async (req, res, next) => {
   }
 });
 
+// Squadco webhook
 app.post("/webhooks/funding", async (req, res, next) => {
   try {
     const signature = req.headers["x-squad-encrypted-body"];
@@ -384,16 +469,20 @@ app.post("/webhooks/funding", async (req, res, next) => {
   }
 });
 
+// Cron job
 const cronJob = cron.schedule("*/5 * * * *", () => {});
 
+// Global error handler
 app.use((err, _req, res, _next) => {
   console.error("Error:", err.stack || err);
   res.status(500).json({ success: false, error: { message: err.message || "Internal error" } });
 });
 
+// Start Server
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server active on port ${PORT}`));
 
+// Graceful shutdown
 process.on("SIGTERM", () => {
   cronJob.stop();
   server.close(() => process.exit(0));
