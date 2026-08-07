@@ -1,4 +1,8 @@
-require("dotenv").config();
+// Load environment variables ONLY in development (not on Render)
+if (process.env.NODE_ENV !== "production") {
+  require("dotenv").config();
+}
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -33,9 +37,8 @@ if (missingVars.length > 0) {
 // 2. BREVO API CLIENT INITIALIZATION (SDK V3 FIX)
 // -------------------------------------------------------------
 const defaultClient = Brevo.ApiClient.instance;
-const apiKey = defaultClient.authentications['api-key'];
+const apiKey = defaultClient.authentications["api-key"];
 apiKey.apiKey = process.env.BREVO_API_KEY;
-
 const brevoApi = new Brevo.TransactionalEmailsApi();
 
 // -------------------------------------------------------------
