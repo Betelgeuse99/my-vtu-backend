@@ -9,10 +9,15 @@ const cron = require("node-cron");
 const supabase = require("./config/supabase");
 
 // -------------------------------------------------------------
-// BREVO CJS MODULE EXPORT RESOLUTION FIX
+// BREVO INITIALIZATION (EXACT SIB-API-V3-SDK SYNTAX FROM DOCS)
 // -------------------------------------------------------------
-const BrevoModule = require("@getbrevo/brevo");
-const Brevo = BrevoModule.default || BrevoModule;
+const SibApiV3Sdk = require('sib-api-v3-sdk');
+const defaultClient = SibApiV3Sdk.ApiClient.instance;
+
+const apiKey = defaultClient.authentications['api-key'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
+
+const brevoApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
 // -------------------------------------------------------------
 // 1. STARTUP ENVIRONMENT VALIDATION
@@ -33,10 +38,6 @@ if (missingVars.length > 0) {
   console.error(`❌ CRITICAL ERROR: Missing required environment variables: ${missingVars.join(", ")}`);
   process.exit(1);
 }
-
-// Brevo API Initialization
-const brevoApi = new Brevo.TransactionalEmailsApi();
-brevoApi.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
 // -------------------------------------------------------------
 // 2. PRE-FLIGHT DATABASE RPC VALIDATION
@@ -196,7 +197,7 @@ app.post("/auth/send-otp", otpLimiter, async (req, res, next) => {
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    const sendSmtpEmail = new Brevo.SendSmtpEmail();
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.subject = `${otpCode} is your Dreamhatcher Verification Code`;
     sendSmtpEmail.sender = { name: process.env.SENDER_NAME, email: process.env.SENDER_EMAIL };
     sendSmtpEmail.to = [{ email }];

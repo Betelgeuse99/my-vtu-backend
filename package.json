@@ -16,7 +16,8 @@
     "express": "^4.19.2",
     "express-rate-limit": "^8.6.1",
     "helmet": "^8.3.0",
-    "node-cron": "^4.6.0"
+    "node-cron": "^4.6.0",
+    "sib-api-v3-sdk": "^8.5.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
