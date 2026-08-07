@@ -10,21 +10,24 @@ const crypto = require("crypto");
 const axios = require("axios");
 const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const cron = require("node-cron");
-const Brevo = require("@getbrevo/brevo");
 const supabase = require("./config/supabase");
 
 // -------------------------------------------------------------
-// 1. BREVO v6 FIX – Destructure the correct classes
+// BREVO INITIALIZATION (sib-api-v3-sdk)
 // -------------------------------------------------------------
-const { TransactionalEmailsApi, SendSmtpEmail, TransactionalEmailsApiApiKeys } = Brevo;
-const brevoApi = new TransactionalEmailsApi();
-brevoApi.setApiKey(TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
+var SibApiV3Sdk = require('sib-api-v3-sdk');
+var defaultClient = SibApiV3Sdk.ApiClient.instance;
+
+var apiKey = defaultClient.authentications['api-key'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
+
+var brevoApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
 // In-Memory OTP Store (email -> { code, expiresAt })
 const otpStore = new Map();
 
 // -------------------------------------------------------------
-// 2. ENVIRONMENT VALIDATION
+// ENVIRONMENT VALIDATION
 // -------------------------------------------------------------
 const REQUIRED_ENV_VARS = [
   "SUPABASE_URL",
@@ -44,7 +47,7 @@ if (missingVars.length > 0) {
 }
 
 // -------------------------------------------------------------
-// 3. SUPABASE RPC VALIDATION
+// SUPABASE RPC VALIDATION
 // -------------------------------------------------------------
 const validateDatabaseRPCs = async () => {
   try {
@@ -92,7 +95,7 @@ const validateDatabaseRPCs = async () => {
 validateDatabaseRPCs();
 
 // -------------------------------------------------------------
-// 4. EXPRESS APP & SECURITY
+// EXPRESS APP & SECURITY
 // -------------------------------------------------------------
 const app = express();
 app.set("trust proxy", 1);
@@ -124,7 +127,7 @@ app.use(
 );
 
 // -------------------------------------------------------------
-// 5. RATE LIMITERS
+// RATE LIMITERS
 // -------------------------------------------------------------
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -157,7 +160,7 @@ const otpLimiter = rateLimit({
 });
 
 // -------------------------------------------------------------
-// 6. CONSTANTS & MIDDLEWARE
+// CONSTANTS & MIDDLEWARE
 // -------------------------------------------------------------
 const BIGISUB_BASE_URL = "https://bigisub.ng/api";
 const SERVER_BASE_URL = process.env.SERVER_BASE_URL;
@@ -182,7 +185,7 @@ const requireAuth = async (req, res, next) => {
 };
 
 // -------------------------------------------------------------
-// 7. ROUTES
+// ROUTES
 // -------------------------------------------------------------
 
 // Health check
@@ -196,7 +199,7 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-// Send OTP via Brevo & Store in Memory
+// Send OTP via Brevo
 app.post("/auth/send-otp", otpLimiter, async (req, res, next) => {
   try {
     const { email } = req.body;
@@ -207,10 +210,10 @@ app.post("/auth/send-otp", otpLimiter, async (req, res, next) => {
 
     otpStore.set(email.toLowerCase(), { code: otpCode, expiresAt });
 
-    const sendSmtpEmail = new SendSmtpEmail();
+    var sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.subject = `${otpCode} is your Dreamhatcher Verification Code`;
     sendSmtpEmail.sender = { name: process.env.SENDER_NAME, email: process.env.SENDER_EMAIL };
-    sendSmtpEmail.to = [{ email }];
+    sendSmtpEmail.to = [{ email: email }];
     sendSmtpEmail.htmlContent = `
       <div style="font-family: Arial, sans-serif; padding: 20px;">
         <h2>Dreamhatcher VTU Verification</h2>
@@ -226,7 +229,7 @@ app.post("/auth/send-otp", otpLimiter, async (req, res, next) => {
   }
 });
 
-// Verify OTP Route (Fixes 404 & Saves User Profile)
+// Verify OTP Route
 app.post("/auth/verify-otp", async (req, res, next) => {
   try {
     const { email, otp, full_name, phone_number } = req.body;
