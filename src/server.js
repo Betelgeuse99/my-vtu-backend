@@ -6,10 +6,12 @@ const crypto = require("crypto");
 const axios = require("axios");
 const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const cron = require("node-cron");
-const { TransactionalEmailsApi, SendSmtpEmail } = require("@getbrevo/brevo");
+const Brevo = require("@getbrevo/brevo");
 const supabase = require("./config/supabase");
 
-// 1. STARTUP ENVIRONMENT VALIDATION (BIGISUB ONLY)
+// -------------------------------------------------------------
+// 1. STARTUP ENVIRONMENT VALIDATION
+// -------------------------------------------------------------
 const REQUIRED_ENV_VARS = [
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -27,11 +29,18 @@ if (missingVars.length > 0) {
   process.exit(1);
 }
 
-// Brevo API Initialization
-const brevoApi = new TransactionalEmailsApi();
-brevoApi.setApiKey(0, process.env.BREVO_API_KEY);
+// -------------------------------------------------------------
+// 2. BREVO API CLIENT INITIALIZATION (SDK V3 FIX)
+// -------------------------------------------------------------
+const defaultClient = Brevo.ApiClient.instance;
+const apiKey = defaultClient.authentications['api-key'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
 
-// 2. PRE-FLIGHT DATABASE RPC VALIDATION
+const brevoApi = new Brevo.TransactionalEmailsApi();
+
+// -------------------------------------------------------------
+// 3. PRE-FLIGHT DATABASE RPC VALIDATION
+// -------------------------------------------------------------
 const validateDatabaseRPCs = async () => {
   try {
     const dummyUuid = "00000000-0000-0000-0000-000000000000";
@@ -77,7 +86,9 @@ const validateDatabaseRPCs = async () => {
 };
 validateDatabaseRPCs();
 
-// 3. EXPRESS APP SETUP
+// -------------------------------------------------------------
+// 4. EXPRESS APP SETUP
+// -------------------------------------------------------------
 const app = express();
 app.set("trust proxy", 1);
 app.use(helmet());
@@ -107,7 +118,9 @@ app.use(
   })
 );
 
-// 4. RATE LIMITERS
+// -------------------------------------------------------------
+// 5. RATE LIMITERS
+// -------------------------------------------------------------
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -138,7 +151,9 @@ const otpLimiter = rateLimit({
   message: { success: false, error: { code: "OTP_LIMIT", message: "Wait a minute before requesting another OTP." } },
 });
 
-// 5. CONSTANTS & MIDDLEWARE
+// -------------------------------------------------------------
+// 6. CONSTANTS & MIDDLEWARE
+// -------------------------------------------------------------
 const BIGISUB_BASE_URL = "https://bigisub.ng/api";
 const SERVER_BASE_URL = process.env.SERVER_BASE_URL;
 
@@ -161,7 +176,9 @@ const requireAuth = async (req, res, next) => {
   }
 };
 
-// 6. ROUTES
+// -------------------------------------------------------------
+// 7. ROUTES
+// -------------------------------------------------------------
 app.get("/health", async (_req, res) => {
   try {
     const { error } = await supabase.from("orders").select("order_id").limit(1);
@@ -179,7 +196,7 @@ app.post("/auth/send-otp", otpLimiter, async (req, res, next) => {
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    const sendSmtpEmail = new SendSmtpEmail();
+    const sendSmtpEmail = new Brevo.SendSmtpEmail();
     sendSmtpEmail.subject = `${otpCode} is your Dreamhatcher Verification Code`;
     sendSmtpEmail.sender = { name: process.env.SENDER_NAME, email: process.env.SENDER_EMAIL };
     sendSmtpEmail.to = [{ email }];
