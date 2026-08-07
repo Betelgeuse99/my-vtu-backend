@@ -4,7 +4,7 @@
   "description": "Production Node.js + Express + Supabase backend for VTU & Bill Payments",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node server.js",
     "dev": "nodemon src/server.js"
   },
   "dependencies": {
