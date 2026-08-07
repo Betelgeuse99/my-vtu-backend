@@ -42,7 +42,6 @@ const REQUIRED_ENV_VARS = [
 
 const missingVars = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
 if (missingVars.length > 0) {
-  console.error(`❌ CRITICAL ERROR: Missing required environment variables: ${missingVars.join(", ")}`);
   process.exit(1);
 }
 
@@ -83,12 +82,9 @@ const validateDatabaseRPCs = async () => {
       refundErr?.code === "PGRST202" ||
       depositErr?.code === "PGRST202"
     ) {
-      console.error("❌ CRITICAL ERROR: Missing RPC functions in Supabase!");
       process.exit(1);
     }
-    console.log("✅ All PostgreSQL RPC functions verified successfully.");
   } catch (err) {
-    console.error("❌ Pre-flight check failed:", err.message);
     process.exit(1);
   }
 };
@@ -205,15 +201,16 @@ app.post("/auth/send-otp", otpLimiter, async (req, res, next) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ success: false, error: { message: "Email is required" } });
 
+    const normalizedEmail = email.trim().toLowerCase();
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
 
-    otpStore.set(email.toLowerCase(), { code: otpCode, expiresAt });
+    otpStore.set(normalizedEmail, { code: otpCode, expiresAt });
 
     var sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.subject = `${otpCode} is your Dreamhatcher Verification Code`;
     sendSmtpEmail.sender = { name: process.env.SENDER_NAME, email: process.env.SENDER_EMAIL };
-    sendSmtpEmail.to = [{ email: email }];
+    sendSmtpEmail.to = [{ email: normalizedEmail }];
     sendSmtpEmail.htmlContent = `
       <div style="font-family: Arial, sans-serif; padding: 20px;">
         <h2>Dreamhatcher VTU Verification</h2>
@@ -238,29 +235,33 @@ app.post("/auth/verify-otp", async (req, res, next) => {
       return res.status(400).json({ success: false, error: { message: "Email and OTP are required" } });
     }
 
-    const storedData = otpStore.get(email.toLowerCase());
+    const normalizedEmail = email.trim().toLowerCase();
+    const storedData = otpStore.get(normalizedEmail);
 
     if (!storedData) {
       return res.status(400).json({ success: false, error: { message: "No OTP found. Request a new one." } });
     }
 
     if (Date.now() > storedData.expiresAt) {
-      otpStore.delete(email.toLowerCase());
+      otpStore.delete(normalizedEmail);
       return res.status(400).json({ success: false, error: { message: "OTP has expired." } });
     }
 
-    if (storedData.code !== otp.trim()) {
+    const receivedCode = String(otp).trim().replace(/['"]+/g, '');
+    const expectedCode = String(storedData.code).trim();
+
+    if (receivedCode !== expectedCode) {
       return res.status(400).json({ success: false, error: { message: "Invalid OTP code." } });
     }
 
-    otpStore.delete(email.toLowerCase());
+    otpStore.delete(normalizedEmail);
 
     const { data: userProfile, error: dbErr } = await supabase
       .from("profiles")
       .upsert(
         [
           {
-            email: email.toLowerCase(),
+            email: normalizedEmail,
             full_name: full_name || null,
             phone_number: phone_number || null,
             updated_at: new Date().toISOString(),
@@ -272,7 +273,6 @@ app.post("/auth/verify-otp", async (req, res, next) => {
       .single();
 
     if (dbErr) {
-      console.error("Database insert error:", dbErr);
       return res.status(500).json({ success: false, error: { message: "Profile creation error: " + dbErr.message } });
     }
 
@@ -477,7 +477,6 @@ const cronJob = cron.schedule("*/5 * * * *", () => {});
 
 // Global error handler
 app.use((err, _req, res, _next) => {
-  console.error("Error:", err.stack || err);
   res.status(500).json({ success: false, error: { message: err.message || "Internal error" } });
 });
 
