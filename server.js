@@ -30,10 +30,24 @@ if (missingVars.length > 0) {
 }
 
 // -------------------------------------------------------------
-// 2. BREVO INITIALIZATION (CANONICAL COMMONJS SYNTAX)
+// 2. BREVO INITIALIZATION (SAFE V3 INSTANTIATION)
 // -------------------------------------------------------------
-const brevoApi = new Brevo.TransactionalEmailsApi();
-brevoApi.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
+let brevoApi;
+if (Brevo.TransactionalEmailsApi) {
+  brevoApi = new Brevo.TransactionalEmailsApi();
+  if (brevoApi.setApiKey && Brevo.TransactionalEmailsApiApiKeys) {
+    brevoApi.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
+  } else {
+    const defaultClient = Brevo.ApiClient.instance;
+    const apiKey = defaultClient.authentications['api-key'];
+    apiKey.apiKey = process.env.BREVO_API_KEY;
+  }
+} else {
+  const defaultClient = Brevo.ApiClient.instance;
+  const apiKey = defaultClient.authentications['api-key'];
+  apiKey.apiKey = process.env.BREVO_API_KEY;
+  brevoApi = new Brevo.TransactionalEmailsApi();
+}
 
 // -------------------------------------------------------------
 // 3. PRE-FLIGHT DATABASE RPC VALIDATION
