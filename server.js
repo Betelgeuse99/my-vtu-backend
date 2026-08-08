@@ -102,7 +102,7 @@ app.post("/auth/send-otp", async (req, res, next) => {
   }
 });
 
-// Verify OTP Route
+// Verify OTP Route (Fail-Safe Auth User Creation)
 app.post("/auth/verify-otp", async (req, res, next) => {
   try {
     const { email, otp, full_name, phone_number } = req.body;
@@ -113,7 +113,7 @@ app.post("/auth/verify-otp", async (req, res, next) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Fetch record from Supabase
+    // 1. Fetch OTP record
     const { data: storedData, error: fetchErr } = await supabase
       .from("temp_otps")
       .select("*")
@@ -121,29 +121,26 @@ app.post("/auth/verify-otp", async (req, res, next) => {
       .maybeSingle();
 
     if (fetchErr) {
-      return res.status(500).json({ success: false, error: { message: "DB Fetch Error: " + fetchErr.message } });
+      return res.status(500).json({ success: false, error: { message: "DB Error: " + fetchErr.message } });
     }
 
     if (!storedData) {
-      return res.status(400).json({ success: false, error: { message: "No active OTP found for " + normalizedEmail } });
+      return res.status(400).json({ success: false, error: { message: "No active OTP found. Please request a new one." } });
     }
 
-    // Clean codes
+    // 2. Normalize codes
     const receivedCode = String(otp).replace(/\D/g, '').trim();
     const expectedCode = String(storedData.code).replace(/\D/g, '').trim();
 
     if (receivedCode !== expectedCode) {
       return res.status(400).json({ 
         success: false, 
-        error: { message: `Code Mismatch: Typed [${receivedCode}], Expected [${expectedCode}]` } 
+        error: { message: `Invalid code entered.` } 
       });
     }
 
-    // 🔴 DO NOT DELETE TEMP OTP ROW FOR NOW TO PREVENT IMMEDIATE WIPEOUT
-    // await supabase.from("temp_otps").delete().eq("email", normalizedEmail);
-
-    // Save profile
-    const { data: userProfile, error: dbErr } = await supabase
+    // 3. Upsert into public.profiles directly (Bypasses GoTrue Auth email crashes)
+    const { data: userProfile, error: profileErr } = await supabase
       .from("profiles")
       .upsert(
         [
@@ -159,9 +156,12 @@ app.post("/auth/verify-otp", async (req, res, next) => {
       .select()
       .single();
 
-    if (dbErr) {
-      return res.status(500).json({ success: false, error: { message: "Profile creation failed: " + dbErr.message } });
+    if (profileErr) {
+      return res.status(500).json({ success: false, error: { message: "Database Error: " + profileErr.message } });
     }
+
+    // 4. Verification complete - remove temp OTP
+    await supabase.from("temp_otps").delete().eq("email", normalizedEmail);
 
     return res.json({
       success: true,
