@@ -22,9 +22,6 @@ apiKey.apiKey = process.env.BREVO_API_KEY;
 
 var brevoApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
-// In-Memory OTP Store (email -> { code, expiresAt })
-const otpStore = new Map();
-
 // -------------------------------------------------------------
 // ENVIRONMENT VALIDATION
 // -------------------------------------------------------------
@@ -161,7 +158,7 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-// Send OTP via Brevo (No Rate Limits)
+// Send OTP via Brevo (Saved to Supabase Database)
 app.post("/auth/send-otp", async (req, res, next) => {
   try {
     const { email } = req.body;
@@ -169,9 +166,16 @@ app.post("/auth/send-otp", async (req, res, next) => {
 
     const normalizedEmail = email.trim().toLowerCase();
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 mins
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 mins
 
-    otpStore.set(normalizedEmail, { code: otpCode, expiresAt });
+    // Store in Supabase database instead of memory
+    const { error: dbOtpErr } = await supabase
+      .from("temp_otps")
+      .upsert({ email: normalizedEmail, code: otpCode, expires_at: expiresAt }, { onConflict: "email" });
+
+    if (dbOtpErr) {
+      return res.status(500).json({ success: false, error: { message: "Failed to initialize OTP session" } });
+    }
 
     var sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.subject = `${otpCode} is your Dreamhatcher Verification Code`;
@@ -192,7 +196,7 @@ app.post("/auth/send-otp", async (req, res, next) => {
   }
 });
 
-// Verify OTP Route
+// Verify OTP Route (Checked from Supabase Database)
 app.post("/auth/verify-otp", async (req, res, next) => {
   try {
     const { email, otp, full_name, phone_number } = req.body;
@@ -202,14 +206,20 @@ app.post("/auth/verify-otp", async (req, res, next) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const storedData = otpStore.get(normalizedEmail);
 
-    if (!storedData) {
+    // Query Supabase database for the stored OTP
+    const { data: storedData, error: fetchErr } = await supabase
+      .from("temp_otps")
+      .select("*")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+
+    if (fetchErr || !storedData) {
       return res.status(400).json({ success: false, error: { message: "No OTP found. Request a new one." } });
     }
 
-    if (Date.now() > storedData.expiresAt) {
-      otpStore.delete(normalizedEmail);
+    if (new Date() > new Date(storedData.expires_at)) {
+      await supabase.from("temp_otps").delete().eq("email", normalizedEmail);
       return res.status(400).json({ success: false, error: { message: "OTP has expired." } });
     }
 
@@ -220,8 +230,10 @@ app.post("/auth/verify-otp", async (req, res, next) => {
       return res.status(400).json({ success: false, error: { message: "Invalid OTP code." } });
     }
 
-    otpStore.delete(normalizedEmail);
+    // OTP Validated! Delete from temp table
+    await supabase.from("temp_otps").delete().eq("email", normalizedEmail);
 
+    // Save profile to Supabase
     const { data: userProfile, error: dbErr } = await supabase
       .from("profiles")
       .upsert(
