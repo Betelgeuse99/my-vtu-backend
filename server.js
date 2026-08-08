@@ -61,7 +61,7 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-// Send OTP (Database calculates expiration)
+// Send OTP
 app.post("/auth/send-otp", async (req, res, next) => {
   try {
     const { email } = req.body;
@@ -70,17 +70,19 @@ app.post("/auth/send-otp", async (req, res, next) => {
     const normalizedEmail = email.trim().toLowerCase();
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // Use Supabase SQL time to avoid local clock/timezone skew
+    // Set 1 hour buffer using Postgres NOW() calculation via ISO
+    const bufferExpiration = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
     const { error: dbOtpErr } = await supabase
       .from("temp_otps")
       .upsert({ 
         email: normalizedEmail, 
         code: otpCode, 
-        expires_at: new Date(Date.now() + 20 * 60 * 1000).toISOString() // 20-min buffer
+        expires_at: bufferExpiration
       }, { onConflict: "email" });
 
     if (dbOtpErr) {
-      return res.status(500).json({ success: false, error: { message: "DB Error: " + dbOtpErr.message } });
+      return res.status(500).json({ success: false, error: { message: "DB Insert Error: " + dbOtpErr.message } });
     }
 
     var sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
@@ -91,7 +93,7 @@ app.post("/auth/send-otp", async (req, res, next) => {
       <div style="font-family: Arial, sans-serif; padding: 20px;">
         <h2>Dreamhatcher VTU Verification</h2>
         <p>Your verification code is: <b style="font-size: 26px; color: #0A192F;">${otpCode}</b></p>
-        <p>Expires in 20 minutes. Do not share this code with anyone.</p>
+        <p>Expires in 30 minutes. Do not share this code with anyone.</p>
       </div>
     `;
 
@@ -102,7 +104,7 @@ app.post("/auth/send-otp", async (req, res, next) => {
   }
 });
 
-// Verify OTP Route (NO automatic deletion on failure)
+// Verify OTP Route (NO Expiry Check to prevent clock lockouts)
 app.post("/auth/verify-otp", async (req, res, next) => {
   try {
     const { email, otp, full_name, phone_number } = req.body;
@@ -113,7 +115,7 @@ app.post("/auth/verify-otp", async (req, res, next) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // 1. Query Supabase
+    // 1. Fetch record from Supabase
     const { data: storedData, error: fetchErr } = await supabase
       .from("temp_otps")
       .select("*")
@@ -121,28 +123,28 @@ app.post("/auth/verify-otp", async (req, res, next) => {
       .maybeSingle();
 
     if (fetchErr) {
-      return res.status(500).json({ success: false, error: { message: "DB Query Error: " + fetchErr.message } });
+      return res.status(500).json({ success: false, error: { message: "DB Fetch Error: " + fetchErr.message } });
     }
 
     if (!storedData) {
-      return res.status(400).json({ success: false, error: { message: "No OTP found for " + normalizedEmail } });
+      return res.status(400).json({ success: false, error: { message: "No active OTP found for " + normalizedEmail } });
     }
 
-    // 2. Strict String Normalization
+    // 2. Strict Numeric Clean-Up
     const receivedCode = String(otp).replace(/\D/g, '').trim();
     const expectedCode = String(storedData.code).replace(/\D/g, '').trim();
 
     if (receivedCode !== expectedCode) {
-      // NOTE: We DO NOT delete the row on mismatch so user can re-try typing!
       return res.status(400).json({ 
         success: false, 
-        error: { message: `Incorrect OTP. You typed [${receivedCode}], expected [${expectedCode}]` } 
+        error: { message: `Code Mismatch: Typed [${receivedCode}], Expected [${expectedCode}]` } 
       });
     }
 
-    // 3. Match Confirmed! Delete temp row & insert profile
+    // 3. Delete OTP record on match
     await supabase.from("temp_otps").delete().eq("email", normalizedEmail);
 
+    // 4. Save profile
     const { data: userProfile, error: dbErr } = await supabase
       .from("profiles")
       .upsert(
