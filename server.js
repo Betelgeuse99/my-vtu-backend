@@ -1,4 +1,3 @@
-// Load environment variables ONLY in development (not on Render)
 if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
 }
@@ -11,9 +10,6 @@ const axios = require("axios");
 const cron = require("node-cron");
 const supabase = require("./config/supabase");
 
-// -------------------------------------------------------------
-// BREVO INITIALIZATION (sib-api-v3-sdk)
-// -------------------------------------------------------------
 var SibApiV3Sdk = require('sib-api-v3-sdk');
 var defaultClient = SibApiV3Sdk.ApiClient.instance;
 
@@ -22,73 +18,6 @@ apiKey.apiKey = process.env.BREVO_API_KEY;
 
 var brevoApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
-// -------------------------------------------------------------
-// ENVIRONMENT VALIDATION
-// -------------------------------------------------------------
-const REQUIRED_ENV_VARS = [
-  "SUPABASE_URL",
-  "SUPABASE_SERVICE_ROLE_KEY",
-  "SQUADCO_SECRET_KEY",
-  "BIGISUB_API_KEY",
-  "BREVO_API_KEY",
-  "SENDER_EMAIL",
-  "SENDER_NAME",
-  "SERVER_BASE_URL",
-];
-
-const missingVars = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
-if (missingVars.length > 0) {
-  process.exit(1);
-}
-
-// -------------------------------------------------------------
-// SUPABASE RPC VALIDATION
-// -------------------------------------------------------------
-const validateDatabaseRPCs = async () => {
-  try {
-    const dummyUuid = "00000000-0000-0000-0000-000000000000";
-    const { error: debitErr } = await supabase.rpc("debit_user_wallet", {
-      p_user_id: dummyUuid,
-      p_amount: 0,
-      p_order_id: "0",
-      p_reference: "TEST",
-    });
-    const { error: creditErr } = await supabase.rpc("credit_user_wallet", {
-      p_user_id: dummyUuid,
-      p_amount: 0,
-      p_reference: "TEST",
-      p_description: "TEST",
-    });
-    const { error: refundErr } = await supabase.rpc("refund_user_wallet", {
-      p_user_id: dummyUuid,
-      p_amount: 0,
-      p_order_id: "0",
-      p_reference: "TEST",
-    });
-    const { error: depositErr } = await supabase.rpc("credit_deposit_atomically", {
-      p_user_id: dummyUuid,
-      p_amount: 0,
-      p_reference: "TEST",
-      p_description: "TEST",
-    });
-
-    if (
-      debitErr?.code === "PGRST202" ||
-      creditErr?.code === "PGRST202" ||
-      refundErr?.code === "PGRST202" ||
-      depositErr?.code === "PGRST202"
-    ) {
-      process.exit(1);
-    }
-  } catch (err) {
-    process.exit(1);
-  }
-};
-validateDatabaseRPCs();
-
-// -------------------------------------------------------------
-// EXPRESS APP & SECURITY
-// -------------------------------------------------------------
 const app = express();
 app.set("trust proxy", 1);
 app.use(helmet());
@@ -118,34 +47,8 @@ app.use(
   })
 );
 
-// -------------------------------------------------------------
-// CONSTANTS & MIDDLEWARE
-// -------------------------------------------------------------
 const BIGISUB_BASE_URL = "https://bigisub.ng/api";
 const SERVER_BASE_URL = process.env.SERVER_BASE_URL;
-
-const requireAuth = async (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ success: false, error: { code: "UNAUTHORIZED", message: "Missing header" } });
-  }
-
-  const token = authHeader.split(" ")[1];
-  try {
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) {
-      return res.status(401).json({ success: false, error: { code: "UNAUTHORIZED", message: "Invalid session" } });
-    }
-    req.user = user;
-    next();
-  } catch (err) {
-    return res.status(401).json({ success: false, error: { code: "AUTH_ERROR", message: err.message } });
-  }
-};
-
-// -------------------------------------------------------------
-// ROUTES
-// -------------------------------------------------------------
 
 // Health check
 app.get("/health", async (_req, res) => {
@@ -158,7 +61,7 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-// Send OTP via Brevo (Saved to Supabase Database)
+// Send OTP (Strict Supabase Insert + Error Throwing)
 app.post("/auth/send-otp", async (req, res, next) => {
   try {
     const { email } = req.body;
@@ -166,17 +69,22 @@ app.post("/auth/send-otp", async (req, res, next) => {
 
     const normalizedEmail = email.trim().toLowerCase();
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 mins
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    // Store in Supabase database instead of memory
+    // 1. Force write to Supabase
     const { error: dbOtpErr } = await supabase
       .from("temp_otps")
       .upsert({ email: normalizedEmail, code: otpCode, expires_at: expiresAt }, { onConflict: "email" });
 
+    // 🔴 IF SUPABASE FAILS, STOP HERE AND RETURN DB ERROR TO APP
     if (dbOtpErr) {
-      return res.status(500).json({ success: false, error: { message: "Failed to initialize OTP session" } });
+      return res.status(500).json({ 
+        success: false, 
+        error: { message: "Supabase DB Insert Error: " + dbOtpErr.message } 
+      });
     }
 
+    // 2. Send email via Brevo
     var sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.subject = `${otpCode} is your Dreamhatcher Verification Code`;
     sendSmtpEmail.sender = { name: process.env.SENDER_NAME, email: process.env.SENDER_EMAIL };
@@ -196,7 +104,7 @@ app.post("/auth/send-otp", async (req, res, next) => {
   }
 });
 
-// Verify OTP Route (Checked from Supabase Database)
+// Verify OTP Route
 app.post("/auth/verify-otp", async (req, res, next) => {
   try {
     const { email, otp, full_name, phone_number } = req.body;
@@ -207,15 +115,19 @@ app.post("/auth/verify-otp", async (req, res, next) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Query Supabase database for the stored OTP
+    // 1. Fetch from Supabase
     const { data: storedData, error: fetchErr } = await supabase
       .from("temp_otps")
       .select("*")
       .eq("email", normalizedEmail)
       .maybeSingle();
 
-    if (fetchErr || !storedData) {
-      return res.status(400).json({ success: false, error: { message: "No OTP found. Request a new one." } });
+    if (fetchErr) {
+      return res.status(500).json({ success: false, error: { message: "DB Query Error: " + fetchErr.message } });
+    }
+
+    if (!storedData) {
+      return res.status(400).json({ success: false, error: { message: "No OTP record found in database for this email." } });
     }
 
     if (new Date() > new Date(storedData.expires_at)) {
@@ -230,10 +142,10 @@ app.post("/auth/verify-otp", async (req, res, next) => {
       return res.status(400).json({ success: false, error: { message: "Invalid OTP code." } });
     }
 
-    // OTP Validated! Delete from temp table
+    // 2. Cleanup OTP record
     await supabase.from("temp_otps").delete().eq("email", normalizedEmail);
 
-    // Save profile to Supabase
+    // 3. Upsert into profiles
     const { data: userProfile, error: dbErr } = await supabase
       .from("profiles")
       .upsert(
@@ -264,206 +176,9 @@ app.post("/auth/verify-otp", async (req, res, next) => {
   }
 });
 
-// Payment callback (HTML response)
-app.get("/payment-callback", (req, res) => {
-  const { reference } = req.query;
-  res.send(`
-    <html>
-      <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
-        <h2>Payment Processed</h2>
-        <p>Reference: <strong>${reference || "N/A"}</strong></p>
-        <p>Your wallet balance will update automatically once confirmed.</p>
-      </body>
-    </html>
-  `);
-});
-
-// Fetch data plans (variations)
-app.get("/services/variations", async (_req, res, next) => {
-  try {
-    const response = await axios.get(`${BIGISUB_BASE_URL}/data-plans`, {
-      headers: { Authorization: `Token ${process.env.BIGISUB_API_KEY}` },
-      timeout: 10000,
-    });
-    return res.json({ success: true, plans: response.data });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Initialize wallet funding (Squadco)
-app.post("/wallet/initialize-funding", requireAuth, async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const userEmail = req.user.email;
-    const { amount } = req.body;
-
-    if (!amount || amount < 100) {
-      return res.status(400).json({ success: false, error: { message: "Minimum deposit is 100 Naira" } });
-    }
-
-    const reference = `FUND-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
-
-    const { error: dbErr } = await supabase.from("wallet_deposits").insert([
-      { user_id: userId, amount, reference, gateway: "squadco", status: "pending" },
-    ]);
-
-    if (dbErr) return res.status(500).json({ success: false, error: { message: "Could not log deposit" } });
-
-    const squadResponse = await axios.post(
-      "https://api-d.squadco.com/transaction/initiate",
-      {
-        email: userEmail,
-        amount: Math.round(Number(amount) * 100),
-        initiate_type: "inline",
-        currency: "NGN",
-        transaction_ref: reference,
-        callback_url: `${SERVER_BASE_URL}/payment-callback`,
-      },
-      {
-        headers: { Authorization: `Bearer ${process.env.SQUADCO_SECRET_KEY}` },
-        timeout: 10000,
-      }
-    );
-
-    if (squadResponse.data.status === 200) {
-      return res.json({ success: true, checkoutUrl: squadResponse.data.data.checkout_url, reference });
-    }
-
-    return res.status(400).json({ success: false, error: { message: "Gateway error" } });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Place an order (data purchase)
-app.post("/orders", requireAuth, async (req, res, next) => {
-  const userId = req.user.id;
-  const { networkId, planId, customerTarget, amount } = req.body;
-  const idempotencyKey = req.headers["x-idempotency-key"];
-
-  if (!idempotencyKey || !networkId || !planId || !customerTarget || !amount) {
-    return res.status(400).json({ success: false, error: { message: "Missing required fields" } });
-  }
-
-  try {
-    const { data: existingOrder } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("idempotency_key", idempotencyKey)
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (existingOrder) {
-      return res.json({ success: true, orderId: existingOrder.order_id, status: existingOrder.status });
-    }
-
-    const { data: order, error: orderErr } = await supabase
-      .from("orders")
-      .insert([{ user_id: userId, service_type: "DATA", customer_target: customerTarget, amount, idempotency_key: idempotencyKey }])
-      .select()
-      .single();
-
-    if (orderErr) throw new Error("Database error creating order");
-
-    const requestId = order.order_id;
-
-    const { data: debitSuccess, error: debitErr } = await supabase.rpc("debit_user_wallet", {
-      p_user_id: userId,
-      p_amount: amount,
-      p_order_id: requestId,
-      p_reference: `DEBIT-${requestId}`,
-    });
-
-    if (debitErr || !debitSuccess) {
-      await supabase.from("orders").update({ status: "failed" }).eq("order_id", requestId);
-      return res.status(400).json({ success: false, error: { message: "Insufficient balance" } });
-    }
-
-    try {
-      const pspResponse = await axios.post(
-        `${BIGISUB_BASE_URL}/data/`,
-        { network: networkId, plan: planId, mobile_number: customerTarget, Ported_number: true },
-        { headers: { Authorization: `Token ${process.env.BIGISUB_API_KEY}` }, timeout: 10000 }
-      );
-
-      const pspData = pspResponse.data;
-
-      if (pspData.Status === "successful" || pspData.status === "true" || pspData.status === "successful") {
-        await supabase.from("orders").update({ status: "success" }).eq("order_id", requestId);
-        return res.json({ success: true, orderId: requestId, status: "success" });
-      } else {
-        await supabase.from("orders").update({ status: "failed" }).eq("order_id", requestId);
-        await supabase.rpc("refund_user_wallet", {
-          p_user_id: userId,
-          p_amount: amount,
-          p_order_id: requestId,
-          p_reference: `REFUND-${requestId}`,
-        });
-        return res.status(400).json({ success: false, error: { message: "Provider rejected order. Refunded." } });
-      }
-    } catch (_apiErr) {
-      return res.status(202).json({ success: true, orderId: requestId, status: "pending" });
-    }
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Squadco webhook
-app.post("/webhooks/funding", async (req, res, next) => {
-  try {
-    const signature = req.headers["x-squad-encrypted-body"];
-    const secret = process.env.SQUADCO_SECRET_KEY;
-
-    if (!signature || !secret || !req.rawBody) {
-      return res.status(401).json({ success: false, error: { message: "Unauthorized" } });
-    }
-
-    const expectedSignature = crypto.createHmac("sha512", secret).update(req.rawBody).digest("hex").toUpperCase();
-    if (signature.toUpperCase() !== expectedSignature) {
-      return res.status(401).json({ success: false, error: { message: "Invalid Signature" } });
-    }
-
-    const payload = req.body.Body || req.body.data || req.body;
-    const eventName = req.body.Event || req.body.event;
-
-    if (eventName === "charge_successful" || eventName === "charge.success") {
-      const reference = payload.transaction_ref || payload.reference;
-      const amountInNaira = Number(payload.amount) / 100;
-
-      if (reference) {
-        const { data: deposit } = await supabase.from("wallet_deposits").select("user_id").eq("reference", reference).maybeSingle();
-        if (deposit) {
-          await supabase.rpc("credit_deposit_atomically", {
-            p_user_id: deposit.user_id,
-            p_amount: amountInNaira,
-            p_reference: reference,
-            p_description: `Squadco Deposit (${reference})`,
-          });
-        }
-      }
-    }
-    return res.status(200).send("OK");
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Cron job
-const cronJob = cron.schedule("*/5 * * * *", () => {});
-
-// Global error handler
 app.use((err, _req, res, _next) => {
   res.status(500).json({ success: false, error: { message: err.message || "Internal error" } });
 });
 
-// Start Server
 const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server active on port ${PORT}`));
-
-// Graceful shutdown
-process.on("SIGTERM", () => {
-  cronJob.stop();
-  server.close(() => process.exit(0));
-});
+app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Server active on port ${PORT}`));
