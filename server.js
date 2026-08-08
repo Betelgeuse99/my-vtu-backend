@@ -45,7 +45,7 @@ app.post("/auth/send-otp", async (req, res) => {
   }
 });
 
-// 3. VERIFY OTP & REGISTER USER
+// 3. VERIFY OTP & REGISTER / UPDATE USER
 app.post("/auth/verify-otp", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const otp = (req.body.otp || "").trim();
@@ -58,23 +58,25 @@ app.post("/auth/verify-otp", async (req, res) => {
   }
 
   try {
-    // A. Verify code in DB
+    // A. Verify OTP
     const { data: otpData } = await supabase.from("temp_otps").select("*").eq("email", email).eq("otp", otp).single();
     if (!otpData) {
       return res.status(400).json({ success: false, message: "Invalid or expired verification code." });
     }
 
-    // B. Create or Fetch Auth User
+    // B. Check if Auth User exists
     let userId;
     const { data: userList } = await supabase.auth.admin.listUsers();
     const existing = userList?.users?.find(u => u.email === email);
 
     if (existing) {
       userId = existing.id;
-      // Update password if specified
-      if (req.body.password) {
-        await supabase.auth.admin.updateUserById(userId, { password: req.body.password });
-      }
+      // ALWAYS UPDATE PASSWORD FOR EXISTING USERS ON RE-VERIFICATION
+      const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
+        password: password,
+        user_metadata: { full_name: fullName }
+      });
+      if (updateErr) console.warn("⚠️ Password update warning:", updateErr.message);
     } else {
       const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
         email, 
@@ -100,11 +102,11 @@ app.post("/auth/verify-otp", async (req, res) => {
       throw new Error("Failed to create profile row.");
     }
 
-    // D. Create Wallet & Cleanup
+    // D. Initialize Wallet & Cleanup
     await supabase.from("wallets").upsert({ user_id: userId, balance: 0 }, { onConflict: "user_id" });
     await supabase.from("temp_otps").delete().eq("email", email);
 
-    console.log(`✅ Registration Verified for ${email} (User ID: ${userId})`);
+    console.log(`✅ User Verified & Password Updated for ${email} (ID: ${userId})`);
     res.json({ success: true, message: "Verification successful", userId });
 
   } catch (err) {
@@ -113,7 +115,7 @@ app.post("/auth/verify-otp", async (req, res) => {
   }
 });
 
-// 4. STRICT LOGIN ROUTE (Verifies Email + Password against Supabase Auth)
+// 4. STRICT LOGIN ROUTE
 app.post("/auth/login", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const password = req.body.password;
@@ -123,7 +125,6 @@ app.post("/auth/login", async (req, res) => {
   }
 
   try {
-    // 1. Verify credentials with Supabase Auth GoTrue engine
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: email,
       password: password,
@@ -137,7 +138,6 @@ app.post("/auth/login", async (req, res) => {
       });
     }
 
-    // 2. Fetch User Profile
     const { data: profile } = await supabase
       .from("profiles")
       .select("*")
