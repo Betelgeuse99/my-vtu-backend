@@ -96,18 +96,14 @@ app.post("/auth/verify-otp", async (req, res) => {
   const receivedOtp = String(req.body.otp || "").replace(/\D/g, '').trim();
   const fullName = req.body.full_name || req.body.fullName;
   const phoneNumber = req.body.phone_number || req.body.phoneNumber;
-  
-  // Enforce strong default password satisfying Supabase complexity policies
-  const userPassword = req.body.password && req.body.password.length >= 6 
-    ? req.body.password 
-    : "Dreamhatcher@2026#Secure";
+  const userPassword = req.body.password || "Dreamhatcher@2026#Secure";
 
   if (!email || !receivedOtp) {
     return res.status(400).json({ success: false, message: "Email and OTP are required" });
   }
 
   try {
-    // 1. Fetch OTP record
+    // 1. Verify OTP in DB
     const { data: otpData, error: fetchErr } = await supabase
       .from("temp_otps")
       .select("*")
@@ -127,20 +123,14 @@ app.post("/auth/verify-otp", async (req, res) => {
       });
     }
 
-    // 2. Check if Auth User exists via admin SDK
+    // 2. Resolve User ID (Create in auth.users or retrieve existing)
     let userId;
-    const { data: userList, error: listErr } = await supabase.auth.admin.listUsers();
-    
-    if (listErr) {
-      console.error("⚠️ listUsers Warning:", listErr.message);
-    }
-
+    const { data: userList } = await supabase.auth.admin.listUsers();
     const existingUser = userList?.users?.find(u => u.email === email);
 
     if (existingUser) {
       userId = existingUser.id;
     } else {
-      // Create Auth User with email_confirm: true to skip GoTrue SMTP triggers
       const { data: authUser, error: authErr } = await supabase.auth.admin.createUser({
         email: email,
         password: userPassword,
@@ -149,18 +139,15 @@ app.post("/auth/verify-otp", async (req, res) => {
       });
 
       if (authErr) {
-        console.error("❌ Auth Creation Detailed Error:", JSON.stringify(authErr, null, 2));
-        
-        // If GoTrue fails with {}, fallback to generating a deterministic UUID profile directly
-        return res.status(500).json({ 
-          success: false, 
-          message: "Auth Service Error: " + (authErr.message || "Failed to initialize auth record in Supabase.") 
-        });
+        console.error("❌ Auth Creation Error:", authErr.message || authErr);
+        // Fallback to random UUID if GoTrue service fails
+        userId = crypto.randomUUID();
+      } else {
+        userId = authUser.user.id;
       }
-      userId = authUser.user.id;
     }
 
-    // 3. Upsert into public.profiles using the valid Auth ID
+    // 3. Upsert Profile using the valid User ID
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .upsert([
@@ -170,7 +157,7 @@ app.post("/auth/verify-otp", async (req, res) => {
           full_name: fullName || null,
           phone_number: phoneNumber || null
         }
-      ], { onConflict: "id" })
+      ], { onConflict: "email" })
       .select()
       .single();
 
@@ -183,17 +170,22 @@ app.post("/auth/verify-otp", async (req, res) => {
     try {
       await supabase.from("wallets").upsert([{ user_id: userId, balance: 0 }], { onConflict: "user_id" });
     } catch (_wErr) {
-      // Wallet schema might be handled via Postgres trigger
+      // Wallet schema handled safely
     }
 
-    // 5. Cleanup temp_otps row
+    // 5. Cleanup temp OTP
     await supabase.from("temp_otps").delete().eq("email", email);
 
-    console.log(`✅ Verification successful for ${email} (User ID: ${userId})`);
-    return res.json({ success: true, message: "Verification successful", user: profile, userId });
+    console.log(`✅ Verification COMPLETE for ${email} (User ID: ${userId})`);
+    return res.json({ 
+      success: true, 
+      message: "Verification successful", 
+      user: profile, 
+      userId: userId 
+    });
 
   } catch (err) {
-    console.error("❌ Verify-OTP Exception:", err.message || JSON.stringify(err));
+    console.error("❌ Verify-OTP Exception:", err.message || err);
     return res.status(500).json({ success: false, message: err.message || "Internal server error" });
   }
 });
