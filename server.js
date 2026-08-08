@@ -51,7 +51,7 @@ app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
 // 4. PRODUCTION AUTH ROUTES
 // -------------------------------------------------------------
 
-// SEND OTP (Uses 'otp' column matching your Supabase Schema)
+// SEND OTP
 app.post("/auth/send-otp", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ success: false, message: "Email required" });
@@ -60,7 +60,7 @@ app.post("/auth/send-otp", async (req, res) => {
   const cleanEmail = email.toLowerCase().trim();
 
   try {
-    // A. Save to Supabase using 'otp' column
+    // Save to temp_otps table
     const { error: dbErr } = await supabase
       .from("temp_otps")
       .upsert({ email: cleanEmail, otp: otpCode, created_at: new Date() }, { onConflict: "email" });
@@ -70,7 +70,7 @@ app.post("/auth/send-otp", async (req, res) => {
       return res.status(500).json({ success: false, message: "DB Error: " + dbErr.message });
     }
 
-    // B. Send via Brevo
+    // Send email via Brevo
     const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.subject = `${otpCode} is your Dreamhatcher Verification Code`;
     sendSmtpEmail.sender = { name: process.env.SENDER_NAME, email: process.env.SENDER_EMAIL };
@@ -92,19 +92,20 @@ app.post("/auth/send-otp", async (req, res) => {
   }
 });
 
-// VERIFY OTP (No 'updated_at' column in profiles upsert)
+// VERIFY OTP & CREATE AUTH USER + PROFILE
 app.post("/auth/verify-otp", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const receivedOtp = String(req.body.otp || "").replace(/\D/g, '').trim();
   const fullName = req.body.full_name || req.body.fullName;
   const phoneNumber = req.body.phone_number || req.body.phoneNumber;
+  const password = req.body.password || "Dreamhatcher@2026"; // Fallback temporary password if missing
 
   if (!email || !receivedOtp) {
     return res.status(400).json({ success: false, message: "Email and OTP are required" });
   }
 
   try {
-    // 1. Fetch from Supabase using 'otp' column
+    // 1. Fetch OTP record
     const { data: otpData, error: fetchErr } = await supabase
       .from("temp_otps")
       .select("*")
@@ -124,16 +125,40 @@ app.post("/auth/verify-otp", async (req, res) => {
       });
     }
 
-    // 2. Create/Update Profile in public.profiles (Stripped updated_at)
+    // 2. Check if Auth User already exists or Create a New One
+    let userId;
+    const { data: existingUser } = await supabase.auth.admin.listUsers();
+    const userFound = existingUser?.users?.find(u => u.email === email);
+
+    if (userFound) {
+      userId = userFound.id;
+    } else {
+      // Create Auth User (email_confirm: true bypasses Supabase verification emails)
+      const { data: authUser, error: authErr } = await supabase.auth.admin.createUser({
+        email: email,
+        password: password,
+        email_confirm: true,
+        user_metadata: { full_name: fullName }
+      });
+
+      if (authErr) {
+        console.error("❌ Auth Creation Error:", authErr.message);
+        return res.status(500).json({ success: false, message: "Auth Error: " + authErr.message });
+      }
+      userId = authUser.user.id;
+    }
+
+    // 3. Upsert into public.profiles USING the generated Auth ID
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .upsert([
         {
+          id: userId,
           email: email,
           full_name: fullName || null,
           phone_number: phoneNumber || null
         }
-      ], { onConflict: "email" })
+      ], { onConflict: "id" })
       .select()
       .single();
 
@@ -142,11 +167,18 @@ app.post("/auth/verify-otp", async (req, res) => {
       return res.status(500).json({ success: false, message: "Profile Error: " + profileErr.message });
     }
 
-    // 3. Cleanup temp_otps row after successful verification
+    // 4. Optionally Initialize Wallet (if wallets table exists)
+    try {
+      await supabase.from("wallets").upsert([{ user_id: userId, balance: 0 }], { onConflict: "user_id" });
+    } catch (_wErr) {
+      // Ignore if wallet schema is handled by DB triggers
+    }
+
+    // 5. Cleanup temp_otps row after successful verification
     await supabase.from("temp_otps").delete().eq("email", email);
 
-    console.log(`✅ Verification successful for ${email}`);
-    return res.json({ success: true, message: "Verification successful", user: profile });
+    console.log(`✅ Verification successful for ${email} (ID: ${userId})`);
+    return res.json({ success: true, message: "Verification successful", user: profile, userId });
 
   } catch (err) {
     console.error("❌ Verify-OTP Exception:", err.message);
