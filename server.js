@@ -69,8 +69,6 @@ app.post("/auth/send-otp", async (req, res, next) => {
 
     const normalizedEmail = email.trim().toLowerCase();
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // Set 1 hour buffer using Postgres NOW() calculation via ISO
     const bufferExpiration = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
     const { error: dbOtpErr } = await supabase
@@ -104,7 +102,7 @@ app.post("/auth/send-otp", async (req, res, next) => {
   }
 });
 
-// Verify OTP Route (NO Expiry Check to prevent clock lockouts)
+// Verify OTP Route
 app.post("/auth/verify-otp", async (req, res, next) => {
   try {
     const { email, otp, full_name, phone_number } = req.body;
@@ -115,7 +113,7 @@ app.post("/auth/verify-otp", async (req, res, next) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // 1. Fetch record from Supabase
+    // Fetch record from Supabase
     const { data: storedData, error: fetchErr } = await supabase
       .from("temp_otps")
       .select("*")
@@ -130,7 +128,7 @@ app.post("/auth/verify-otp", async (req, res, next) => {
       return res.status(400).json({ success: false, error: { message: "No active OTP found for " + normalizedEmail } });
     }
 
-    // 2. Strict Numeric Clean-Up
+    // Clean codes
     const receivedCode = String(otp).replace(/\D/g, '').trim();
     const expectedCode = String(storedData.code).replace(/\D/g, '').trim();
 
@@ -141,10 +139,10 @@ app.post("/auth/verify-otp", async (req, res, next) => {
       });
     }
 
-    // 3. Delete OTP record on match
-    await supabase.from("temp_otps").delete().eq("email", normalizedEmail);
+    // 🔴 DO NOT DELETE TEMP OTP ROW FOR NOW TO PREVENT IMMEDIATE WIPEOUT
+    // await supabase.from("temp_otps").delete().eq("email", normalizedEmail);
 
-    // 4. Save profile
+    // Save profile
     const { data: userProfile, error: dbErr } = await supabase
       .from("profiles")
       .upsert(
