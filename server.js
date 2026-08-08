@@ -19,7 +19,7 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
-// 2. SEND OTP (For Sign Up & Forgot Password)
+// 2. SEND OTP
 app.post("/auth/send-otp", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ success: false, message: "Email required" });
@@ -45,7 +45,7 @@ app.post("/auth/send-otp", async (req, res) => {
   }
 });
 
-// 3. VERIFY OTP & SIGN UP / UPDATE PASSWORD
+// 3. VERIFY OTP & REGISTER
 app.post("/auth/verify-otp", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const otp = (req.body.otp || "").trim();
@@ -59,26 +59,21 @@ app.post("/auth/verify-otp", async (req, res) => {
   }
 
   try {
-    // A. Verify OTP
     const { data: otpData } = await supabase.from("temp_otps").select("*").eq("email", email).eq("otp", otp).single();
     if (!otpData) {
       return res.status(400).json({ success: false, message: "Invalid or expired verification code." });
     }
 
-    // B. Check Auth User
     let userId;
     const { data: userList } = await supabase.auth.admin.listUsers();
     const existing = userList?.users?.find(u => u.email === email);
 
     if (existing) {
       userId = existing.id;
-      // Force update password in auth.users
-      const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
+      await supabase.auth.admin.updateUserById(userId, {
         password: password,
         user_metadata: { full_name: fullName }
       });
-      if (updateErr) console.error("❌ Password Update Error:", updateErr.message);
-      else console.log(`🔑 Password updated successfully for existing user ${email}`);
     } else {
       const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
         email, 
@@ -88,23 +83,20 @@ app.post("/auth/verify-otp", async (req, res) => {
       });
       if (authError) throw authError;
       userId = authUser.user.id;
-      console.log(`🔑 New Auth User created for ${email} with password length ${password.length}`);
     }
 
-    // C. Upsert Profile
-    await supabase.from("profiles").upsert({
+    const { data: profile } = await supabase.from("profiles").upsert({
       id: userId,
       full_name: fullName,
       phone_number: phoneNumber,
       email: email,
       email_verified: true
-    }, { onConflict: "id" });
+    }, { onConflict: "id" }).select().single();
 
-    // D. Wallet & Cleanup
     await supabase.from("wallets").upsert({ user_id: userId, balance: 0 }, { onConflict: "user_id" });
     await supabase.from("temp_otps").delete().eq("email", email);
 
-    res.json({ success: true, message: "Verification successful", userId });
+    res.json({ success: true, message: "Verification successful", userId, user: profile });
 
   } catch (err) {
     console.error("❌ VERIFY_ERROR:", err.message);
@@ -112,7 +104,7 @@ app.post("/auth/verify-otp", async (req, res) => {
   }
 });
 
-// 4. RESET PASSWORD ROUTE (For Forgot Password Screen)
+// 4. RESET PASSWORD
 app.post("/auth/reset-password", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const otp = (req.body.otp || "").trim();
@@ -123,13 +115,11 @@ app.post("/auth/reset-password", async (req, res) => {
   }
 
   try {
-    // 1. Verify OTP
     const { data: otpData } = await supabase.from("temp_otps").select("*").eq("email", email).eq("otp", otp).single();
     if (!otpData) {
       return res.status(400).json({ success: false, message: "Invalid or expired OTP code." });
     }
 
-    // 2. Lookup Auth User
     const { data: userList } = await supabase.auth.admin.listUsers();
     const existing = userList?.users?.find(u => u.email === email);
 
@@ -137,19 +127,9 @@ app.post("/auth/reset-password", async (req, res) => {
       return res.status(404).json({ success: false, message: "No account found with this email." });
     }
 
-    // 3. Directly update password in Supabase Auth GoTrue engine
-    const { error: updateErr } = await supabase.auth.admin.updateUserById(existing.id, {
-      password: newPassword
-    });
-
-    if (updateErr) {
-      throw updateErr;
-    }
-
-    // 4. Delete temp OTP
+    await supabase.auth.admin.updateUserById(existing.id, { password: newPassword });
     await supabase.from("temp_otps").delete().eq("email", email);
 
-    console.log(`✅ Password successfully reset for ${email}`);
     return res.json({ success: true, message: "Password reset successful! You can now log in." });
 
   } catch (err) {
@@ -158,7 +138,7 @@ app.post("/auth/reset-password", async (req, res) => {
   }
 });
 
-// 5. STRICT LOGIN ROUTE
+// 5. LOGIN (Returns Full Profile Record)
 app.post("/auth/login", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const password = (req.body.password || "").trim();
@@ -174,7 +154,6 @@ app.post("/auth/login", async (req, res) => {
     });
 
     if (authError || !authData.user) {
-      console.warn(`⚠️ Login rejected for ${email}: ${authError?.message || "Incorrect password"}`);
       return res.status(401).json({ 
         success: false, 
         message: "Invalid email or password." 
