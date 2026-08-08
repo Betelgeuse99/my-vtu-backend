@@ -90,7 +90,7 @@ app.post("/auth/send-otp", async (req, res) => {
   }
 });
 
-// VERIFY OTP & CREATE AUTH USER + PROFILE
+// VERIFY OTP & CREATE BOTH AUTH USER + PROFILE
 app.post("/auth/verify-otp", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const receivedOtp = String(req.body.otp || "").replace(/\D/g, '').trim();
@@ -103,6 +103,7 @@ app.post("/auth/verify-otp", async (req, res) => {
   }
 
   try {
+    // 1. Verify OTP
     const { data: otpData, error: fetchErr } = await supabase
       .from("temp_otps")
       .select("*")
@@ -122,28 +123,34 @@ app.post("/auth/verify-otp", async (req, res) => {
       });
     }
 
+    // 2. CREATE USER IN AUTH.USERS (Mandatory First Step)
     let userId;
-    const { data: userList } = await supabase.auth.admin.listUsers();
-    const existingUser = userList?.users?.find(u => u.email === email);
+    const { data: authUser, error: authErr } = await supabase.auth.admin.createUser({
+      email: email,
+      password: userPassword,
+      email_confirm: true,
+      user_metadata: { full_name: fullName }
+    });
 
-    if (existingUser) {
-      userId = existingUser.id;
-    } else {
-      const { data: authUser, error: authErr } = await supabase.auth.admin.createUser({
-        email: email,
-        password: userPassword,
-        email_confirm: true,
-        user_metadata: { full_name: fullName }
-      });
-
-      if (authErr) {
-        console.error("❌ Auth Creation Error:", authErr.message || authErr);
-        userId = crypto.randomUUID();
+    if (authErr) {
+      // If user already exists in auth.users, fetch their existing ID
+      console.warn("⚠️ Auth creation info:", authErr.message);
+      const { data: userList } = await supabase.auth.admin.listUsers();
+      const existing = userList?.users?.find(u => u.email === email);
+      
+      if (existing) {
+        userId = existing.id;
       } else {
-        userId = authUser.user.id;
+        return res.status(500).json({ 
+          success: false, 
+          message: "Failed to create Auth User: " + authErr.message 
+        });
       }
+    } else {
+      userId = authUser.user.id;
     }
 
+    // 3. CREATE PROFILE (Using the exact auth.users ID)
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .upsert([
@@ -153,7 +160,7 @@ app.post("/auth/verify-otp", async (req, res) => {
           full_name: fullName || null,
           phone_number: phoneNumber || null
         }
-      ], { onConflict: "email" })
+      ], { onConflict: "id" })
       .select()
       .single();
 
@@ -162,13 +169,15 @@ app.post("/auth/verify-otp", async (req, res) => {
       return res.status(500).json({ success: false, message: "Profile Error: " + profileErr.message });
     }
 
+    // 4. Initialize Wallet
     try {
       await supabase.from("wallets").upsert([{ user_id: userId, balance: 0 }], { onConflict: "user_id" });
     } catch (_wErr) {}
 
+    // 5. Cleanup temp OTP
     await supabase.from("temp_otps").delete().eq("email", email);
 
-    console.log(`✅ Verification COMPLETE for ${email} (User ID: ${userId})`);
+    console.log(`✅ Registered in auth.users AND profiles for ${email} (ID: ${userId})`);
     return res.json({ 
       success: true, 
       message: "Verification successful", 
@@ -182,7 +191,7 @@ app.post("/auth/verify-otp", async (req, res) => {
   }
 });
 
-// STRICT LOGIN ROUTE (Rejects Unknown Users)
+// STRICT LOGIN ROUTE
 app.post("/auth/login", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
 
@@ -219,7 +228,7 @@ app.post("/auth/login", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 5. AUXILIARY ROUTES & SERVER START
+// 5. AUXILIARY ROUTES
 // -------------------------------------------------------------
 app.get("/health", (_req, res) => res.json({ status: "OK", timestamp: new Date() }));
 app.post("/orders", (_req, res) => res.json({ success: true, message: "Order processed" }));
