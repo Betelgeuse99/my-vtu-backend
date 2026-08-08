@@ -92,7 +92,7 @@ app.post("/auth/send-otp", async (req, res) => {
   }
 });
 
-// VERIFY OTP (Uses 'otp' column matching your Supabase Schema)
+// VERIFY OTP (No 'updated_at' column in profiles upsert)
 app.post("/auth/verify-otp", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const receivedOtp = String(req.body.otp || "").replace(/\D/g, '').trim();
@@ -124,15 +124,14 @@ app.post("/auth/verify-otp", async (req, res) => {
       });
     }
 
-    // 2. Create/Update Profile in public.profiles
+    // 2. Create/Update Profile in public.profiles (Stripped updated_at)
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .upsert([
         {
           email: email,
           full_name: fullName || null,
-          phone_number: phoneNumber || null,
-          updated_at: new Date().toISOString()
+          phone_number: phoneNumber || null
         }
       ], { onConflict: "email" })
       .select()
