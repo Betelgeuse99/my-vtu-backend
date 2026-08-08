@@ -61,7 +61,7 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-// Send OTP (Strict Supabase Insert + Error Throwing)
+// Send OTP (Database calculates expiration)
 app.post("/auth/send-otp", async (req, res, next) => {
   try {
     const { email } = req.body;
@@ -69,22 +69,20 @@ app.post("/auth/send-otp", async (req, res, next) => {
 
     const normalizedEmail = email.trim().toLowerCase();
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    // 1. Force write to Supabase
+    // Use Supabase SQL time to avoid local clock/timezone skew
     const { error: dbOtpErr } = await supabase
       .from("temp_otps")
-      .upsert({ email: normalizedEmail, code: otpCode, expires_at: expiresAt }, { onConflict: "email" });
+      .upsert({ 
+        email: normalizedEmail, 
+        code: otpCode, 
+        expires_at: new Date(Date.now() + 20 * 60 * 1000).toISOString() // 20-min buffer
+      }, { onConflict: "email" });
 
-    // 🔴 IF SUPABASE FAILS, STOP HERE AND RETURN DB ERROR TO APP
     if (dbOtpErr) {
-      return res.status(500).json({ 
-        success: false, 
-        error: { message: "Supabase DB Insert Error: " + dbOtpErr.message } 
-      });
+      return res.status(500).json({ success: false, error: { message: "DB Error: " + dbOtpErr.message } });
     }
 
-    // 2. Send email via Brevo
     var sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.subject = `${otpCode} is your Dreamhatcher Verification Code`;
     sendSmtpEmail.sender = { name: process.env.SENDER_NAME, email: process.env.SENDER_EMAIL };
@@ -93,7 +91,7 @@ app.post("/auth/send-otp", async (req, res, next) => {
       <div style="font-family: Arial, sans-serif; padding: 20px;">
         <h2>Dreamhatcher VTU Verification</h2>
         <p>Your verification code is: <b style="font-size: 26px; color: #0A192F;">${otpCode}</b></p>
-        <p>Expires in 10 minutes. Do not share this code with anyone.</p>
+        <p>Expires in 20 minutes. Do not share this code with anyone.</p>
       </div>
     `;
 
@@ -104,7 +102,7 @@ app.post("/auth/send-otp", async (req, res, next) => {
   }
 });
 
-// Verify OTP Route
+// Verify OTP Route (NO automatic deletion on failure)
 app.post("/auth/verify-otp", async (req, res, next) => {
   try {
     const { email, otp, full_name, phone_number } = req.body;
@@ -115,7 +113,7 @@ app.post("/auth/verify-otp", async (req, res, next) => {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // 1. Fetch from Supabase
+    // 1. Query Supabase
     const { data: storedData, error: fetchErr } = await supabase
       .from("temp_otps")
       .select("*")
@@ -127,25 +125,24 @@ app.post("/auth/verify-otp", async (req, res, next) => {
     }
 
     if (!storedData) {
-      return res.status(400).json({ success: false, error: { message: "No OTP record found in database for this email." } });
+      return res.status(400).json({ success: false, error: { message: "No OTP found for " + normalizedEmail } });
     }
 
-    if (new Date() > new Date(storedData.expires_at)) {
-      await supabase.from("temp_otps").delete().eq("email", normalizedEmail);
-      return res.status(400).json({ success: false, error: { message: "OTP has expired." } });
-    }
-
-    const receivedCode = String(otp).trim().replace(/['"]+/g, '');
-    const expectedCode = String(storedData.code).trim();
+    // 2. Strict String Normalization
+    const receivedCode = String(otp).replace(/\D/g, '').trim();
+    const expectedCode = String(storedData.code).replace(/\D/g, '').trim();
 
     if (receivedCode !== expectedCode) {
-      return res.status(400).json({ success: false, error: { message: "Invalid OTP code." } });
+      // NOTE: We DO NOT delete the row on mismatch so user can re-try typing!
+      return res.status(400).json({ 
+        success: false, 
+        error: { message: `Incorrect OTP. You typed [${receivedCode}], expected [${expectedCode}]` } 
+      });
     }
 
-    // 2. Cleanup OTP record
+    // 3. Match Confirmed! Delete temp row & insert profile
     await supabase.from("temp_otps").delete().eq("email", normalizedEmail);
 
-    // 3. Upsert into profiles
     const { data: userProfile, error: dbErr } = await supabase
       .from("profiles")
       .upsert(
@@ -163,7 +160,7 @@ app.post("/auth/verify-otp", async (req, res, next) => {
       .single();
 
     if (dbErr) {
-      return res.status(500).json({ success: false, error: { message: "Profile creation error: " + dbErr.message } });
+      return res.status(500).json({ success: false, error: { message: "Profile creation failed: " + dbErr.message } });
     }
 
     return res.json({
