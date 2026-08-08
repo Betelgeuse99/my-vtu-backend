@@ -51,20 +51,19 @@ app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
 // 4. PRODUCTION AUTH ROUTES
 // -------------------------------------------------------------
 
-// SEND OTP (Brevo + Database Fix)
+// SEND OTP (Uses 'otp' column matching your Supabase Schema)
 app.post("/auth/send-otp", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ success: false, message: "Email required" });
 
   const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
   const cleanEmail = email.toLowerCase().trim();
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hr buffer
 
   try {
-    // A. Save to Database (Matching column names: email, code, expires_at)
+    // A. Save to Supabase using 'otp' column
     const { error: dbErr } = await supabase
       .from("temp_otps")
-      .upsert({ email: cleanEmail, code: otpCode, expires_at: expiresAt }, { onConflict: "email" });
+      .upsert({ email: cleanEmail, otp: otpCode, created_at: new Date() }, { onConflict: "email" });
 
     if (dbErr) {
       console.error("❌ DB Insert Error:", dbErr.message);
@@ -93,19 +92,19 @@ app.post("/auth/send-otp", async (req, res) => {
   }
 });
 
-// VERIFY OTP & CREATE PROFILE
+// VERIFY OTP (Uses 'otp' column matching your Supabase Schema)
 app.post("/auth/verify-otp", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
-  const otp = String(req.body.otp || "").replace(/\D/g, '').trim();
+  const receivedOtp = String(req.body.otp || "").replace(/\D/g, '').trim();
   const fullName = req.body.full_name || req.body.fullName;
   const phoneNumber = req.body.phone_number || req.body.phoneNumber;
 
-  if (!email || !otp) {
+  if (!email || !receivedOtp) {
     return res.status(400).json({ success: false, message: "Email and OTP are required" });
   }
 
   try {
-    // 1. Check database for OTP
+    // 1. Fetch from Supabase using 'otp' column
     const { data: otpData, error: fetchErr } = await supabase
       .from("temp_otps")
       .select("*")
@@ -113,15 +112,19 @@ app.post("/auth/verify-otp", async (req, res) => {
       .maybeSingle();
 
     if (fetchErr || !otpData) {
-      return res.status(400).json({ success: false, message: "No active OTP found. Request a new code." });
+      return res.status(400).json({ success: false, message: "No active OTP found for " + email });
     }
 
-    const expectedCode = String(otpData.code).replace(/\D/g, '').trim();
-    if (otp !== expectedCode) {
-      return res.status(400).json({ success: false, message: "Invalid OTP code." });
+    const storedOtp = String(otpData.otp).replace(/\D/g, '').trim();
+
+    if (receivedOtp !== storedOtp) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Invalid code. Received [${receivedOtp}], expected [${storedOtp}]` 
+      });
     }
 
-    // 2. Create/Update Public Profile directly
+    // 2. Create/Update Profile in public.profiles
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .upsert([
@@ -140,7 +143,7 @@ app.post("/auth/verify-otp", async (req, res) => {
       return res.status(500).json({ success: false, message: "Profile Error: " + profileErr.message });
     }
 
-    // 3. Cleanup temp_otps row after verification
+    // 3. Cleanup temp_otps row after successful verification
     await supabase.from("temp_otps").delete().eq("email", email);
 
     console.log(`✅ Verification successful for ${email}`);
@@ -163,4 +166,4 @@ app.post("/wallet/initialize-funding", (_req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Dreamhatcher Production Backend active on port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Dreamhatcher Backend active on port ${PORT}`));
