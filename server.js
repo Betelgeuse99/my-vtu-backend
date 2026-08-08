@@ -103,7 +103,6 @@ app.post("/auth/verify-otp", async (req, res) => {
   }
 
   try {
-    // 1. Verify OTP in DB
     const { data: otpData, error: fetchErr } = await supabase
       .from("temp_otps")
       .select("*")
@@ -123,7 +122,6 @@ app.post("/auth/verify-otp", async (req, res) => {
       });
     }
 
-    // 2. Resolve User ID (Create in auth.users or retrieve existing)
     let userId;
     const { data: userList } = await supabase.auth.admin.listUsers();
     const existingUser = userList?.users?.find(u => u.email === email);
@@ -140,14 +138,12 @@ app.post("/auth/verify-otp", async (req, res) => {
 
       if (authErr) {
         console.error("❌ Auth Creation Error:", authErr.message || authErr);
-        // Fallback to random UUID if GoTrue service fails
         userId = crypto.randomUUID();
       } else {
         userId = authUser.user.id;
       }
     }
 
-    // 3. Upsert Profile using the valid User ID
     const { data: profile, error: profileErr } = await supabase
       .from("profiles")
       .upsert([
@@ -166,14 +162,10 @@ app.post("/auth/verify-otp", async (req, res) => {
       return res.status(500).json({ success: false, message: "Profile Error: " + profileErr.message });
     }
 
-    // 4. Initialize Wallet
     try {
       await supabase.from("wallets").upsert([{ user_id: userId, balance: 0 }], { onConflict: "user_id" });
-    } catch (_wErr) {
-      // Wallet schema handled safely
-    }
+    } catch (_wErr) {}
 
-    // 5. Cleanup temp OTP
     await supabase.from("temp_otps").delete().eq("email", email);
 
     console.log(`✅ Verification COMPLETE for ${email} (User ID: ${userId})`);
@@ -190,8 +182,44 @@ app.post("/auth/verify-otp", async (req, res) => {
   }
 });
 
+// STRICT LOGIN ROUTE (Rejects Unknown Users)
+app.post("/auth/login", async (req, res) => {
+  const email = (req.body.email || "").toLowerCase().trim();
+
+  if (!email) {
+    return res.status(400).json({ success: false, message: "Email is required" });
+  }
+
+  try {
+    const { data: userProfile, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (error || !userProfile) {
+      console.warn(`⚠️ Login rejected: No user found for ${email}`);
+      return res.status(404).json({ 
+        success: false, 
+        message: "No account found with this email. Please Sign Up first." 
+      });
+    }
+
+    console.log(`✅ Login successful for ${email}`);
+    return res.json({ 
+      success: true, 
+      message: "Login successful", 
+      user: userProfile 
+    });
+
+  } catch (err) {
+    console.error("❌ Login Error:", err.message);
+    return res.status(500).json({ success: false, message: "Server error during login" });
+  }
+});
+
 // -------------------------------------------------------------
-// 5. AUXILIARY ROUTES
+// 5. AUXILIARY ROUTES & SERVER START
 // -------------------------------------------------------------
 app.get("/health", (_req, res) => res.json({ status: "OK", timestamp: new Date() }));
 app.post("/orders", (_req, res) => res.json({ success: true, message: "Order processed" }));
