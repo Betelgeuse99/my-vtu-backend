@@ -1,6 +1,6 @@
 const axios = require("axios");
 
-const BIGISUB_BASE_URL = "https://api.bigisub.ng";
+const BIGISUB_BASE_URL = process.env.BIGISUB_BASE_URL || "https://api.bigisub.ng";
 const API_TOKEN = process.env.BIGISUB_API_KEY;
 
 const bigisubClient = axios.create({
@@ -16,7 +16,7 @@ const bigisubClient = axios.create({
 // -------------------------------------------------------------
 exports.purchaseAirtime = async ({ network, phone_number, amount, pin, airtime_type = "vtu" }) => {
   const res = await bigisubClient.post("/api/v2/vtu/airtime/purchase/", {
-    network: Number(network), // 1=MTN, 2=Airtel, 3=Glo, 4=9Mobile
+    network: Number(network),
     phone_number,
     amount: String(amount),
     airtime_type,
@@ -37,7 +37,7 @@ exports.getDataPlans = async (networkId = null) => {
 exports.purchaseData = async ({ network, plan, phone_number, pin, ported_number = true }) => {
   const res = await bigisubClient.post("/api/v2/vtu/data/purchase/", {
     network: Number(network),
-    plan: Number(plan), // Plan ID from data plans list
+    plan: Number(plan),
     phone_number,
     pin,
     ported_number,
@@ -49,7 +49,7 @@ exports.purchaseData = async ({ network, plan, phone_number, pin, ported_number 
 // 3. CABLE TV
 // -------------------------------------------------------------
 exports.getCablePlans = async (cableName) => {
-  const res = await bigisubClient.get(`/api/v2/vtu/cable/plans/?cable_name=${cableName}`); // dstv, gotv, startimes, showmax
+  const res = await bigisubClient.get(`/api/v2/vtu/cable/plans/?cable_name=${cableName}`);
   return res.data;
 };
 
@@ -101,7 +101,7 @@ exports.verifyMeter = async ({ company, meter_no, meter_type }) => {
   const res = await bigisubClient.post("/api/v2/bills/electricity/verify/", {
     company,
     meter_no,
-    meter_type, // prepaid or postpaid
+    meter_type,
   });
   return res.data;
 };
@@ -128,9 +128,9 @@ exports.getEducationPrices = async () => {
 };
 
 exports.purchaseEducationPin = async ({ exam, quantity, pin_code }) => {
-  const res = await bigisubClient.post("/api/v2/bills/result-checker/purchase/", { // WAEC, NECO, NABTEB
+  const res = await bigisubClient.post("/api/v2/bills/result-checker/purchase/", {
     exam,
-    quantity: Number(quantity), // 1, 2, or 5
+    quantity: Number(quantity),
     pin_code,
   });
   return res.data;
