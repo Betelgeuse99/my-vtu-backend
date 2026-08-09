@@ -186,3 +186,77 @@ app.get("/health", (req, res) => res.json({ status: "OK" }));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Dreamhatcher Backend active on port ${PORT}`));
+
+// -------------------------------------------------------------
+// 6. BIGISUB VTU & UTILITY ENDPOINTS
+// -------------------------------------------------------------
+const bigisub = require("./services/bigisub");
+
+// Fetch Data Plans
+app.get("/api/v2/vtu/data/plans", async (req, res) => {
+  try {
+    const network = req.query.network;
+    const plans = await bigisub.getDataPlans(network);
+    res.json(plans);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Purchase Data
+app.post("/api/v2/vtu/data/purchase", async (req, res) => {
+  try {
+    const result = await bigisub.purchaseData(req.body);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Purchase Airtime
+app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
+  try {
+    const result = await bigisub.purchaseAirtime(req.body);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Cable TV Verification & Purchase
+app.post("/api/v2/vtu/cable/verify", async (req, res) => {
+  try {
+    const result = await bigisub.verifyCable(req.body);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
+  try {
+    const result = await bigisub.purchaseCable(req.body);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Electricity Verification & Payment
+app.post("/api/v2/bills/electricity/verify", async (req, res) => {
+  try {
+    const result = await bigisub.verifyMeter(req.body);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post("/api/v2/bills/electricity/pay", async (req, res) => {
+  try {
+    const result = await bigisub.payElectricity(req.body);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
