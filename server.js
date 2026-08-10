@@ -22,6 +22,32 @@ app.use(express.json());
 
 const DEFAULT_PIN = process.env.BIGISUB_PIN || "1234";
 
+// HELPER FUNCTION: SAVE TRANSACTION TO SUPABASE
+async function saveTransactionToSupabase({ userId, title, serviceType, amount, recipient, status, reference }) {
+  if (!userId) {
+    console.warn("⚠️ Cannot save transaction: userId is missing from request body/headers.");
+    return;
+  }
+  try {
+    const { error } = await supabase.from("transactions").insert([
+      {
+        user_id: userId,
+        title: title || "VTU Transaction",
+        service_type: serviceType,
+        amount: Number(amount) || 0,
+        recipient: String(recipient || ""),
+        status: status || "successful",
+        reference: reference || `DH_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        created_at: new Date().toISOString()
+      }
+    ]);
+    if (error) console.error("❌ Supabase Insertion Error:", error.message);
+    else console.log(`✅ Transaction saved successfully for User: ${userId}`);
+  } catch (err) {
+    console.error("❌ Supabase Exception:", err.message);
+  }
+}
+
 // -------------------------------------------------------------
 // 2. AUTHENTICATION ROUTES
 // -------------------------------------------------------------
@@ -114,7 +140,7 @@ app.post("/auth/login", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 3. WALLET & FUNDING API (Monnify / Paystack Manual Sync)
+// 3. WALLET & FUNDING API
 // -------------------------------------------------------------
 app.get("/wallet/balance/:userId", async (req, res) => {
   try {
@@ -130,7 +156,6 @@ app.post("/wallet/initialize-funding", async (req, res) => {
   if (!userId || !amount) return res.status(400).json({ success: false, message: "User ID and Amount required" });
 
   try {
-    // Generate Virtual Account / Reference Payment Details
     const reference = `DH_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     res.json({
       success: true,
@@ -149,14 +174,29 @@ app.post("/wallet/initialize-funding", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 4. BIGISUB VTU & UTILITIES ENGINE
+// 4. BIGISUB VTU ENGINE WITH MANDATORY SUPABASE LOGGING
 // -------------------------------------------------------------
 
 // AIRTIME
 app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
   try {
-    const { network, phone_number, amount } = req.body;
+    const { network, phone_number, amount, userId, user_id } = req.body;
+    const targetUserId = userId || user_id || req.headers["x-user-id"];
+
     const result = await bigisub.purchaseAirtime({ network, phone_number, amount, pin: DEFAULT_PIN });
+
+    if (result.status === "successful" || result.success || result.status === "processing") {
+      await saveTransactionToSupabase({
+        userId: targetUserId,
+        title: `Airtime Top-up (${network?.toUpperCase() || "Network"})`,
+        serviceType: "airtime",
+        amount,
+        recipient: phone_number,
+        status: "successful",
+        reference: result.reference || result.trans_id
+      });
+    }
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
@@ -176,8 +216,23 @@ app.get("/api/v2/vtu/data/plans", async (req, res) => {
 
 app.post("/api/v2/vtu/data/purchase", async (req, res) => {
   try {
-    const { network, plan, phone_number } = req.body;
+    const { network, plan, phone_number, amount, userId, user_id } = req.body;
+    const targetUserId = userId || user_id || req.headers["x-user-id"];
+
     const result = await bigisub.purchaseData({ network, plan, phone_number, pin: DEFAULT_PIN });
+
+    if (result.status === "successful" || result.success || result.status === "processing") {
+      await saveTransactionToSupabase({
+        userId: targetUserId,
+        title: `Data Purchase (${network?.toUpperCase() || "Data"})`,
+        serviceType: "data",
+        amount: amount || result.amount || 0,
+        recipient: phone_number,
+        status: "successful",
+        reference: result.reference || result.trans_id
+      });
+    }
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
@@ -206,8 +261,23 @@ app.post("/api/v2/vtu/cable/verify", async (req, res) => {
 
 app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
   try {
-    const { cable_type, card_no, phone_number, amount, Customer } = req.body;
+    const { cable_type, card_no, phone_number, amount, Customer, userId, user_id } = req.body;
+    const targetUserId = userId || user_id || req.headers["x-user-id"];
+
     const result = await bigisub.purchaseCable({ cable_type, card_no, phone_number, amount, Customer, pin: DEFAULT_PIN });
+
+    if (result.status === "successful" || result.success || result.status === "processing") {
+      await saveTransactionToSupabase({
+        userId: targetUserId,
+        title: `Cable TV (${cable_type?.toUpperCase()})`,
+        serviceType: "cable",
+        amount,
+        recipient: card_no,
+        status: "successful",
+        reference: result.reference || result.trans_id
+      });
+    }
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
@@ -227,8 +297,23 @@ app.get("/api/v2/vtu/recharge-pin/plans", async (req, res) => {
 
 app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
   try {
-    const { plan, quantity, name_on_card } = req.body;
+    const { plan, quantity, name_on_card, amount, userId, user_id } = req.body;
+    const targetUserId = userId || user_id || req.headers["x-user-id"];
+
     const result = await bigisub.purchaseRechargePin({ plan, quantity, name_on_card, pin: DEFAULT_PIN });
+
+    if (result.status === "successful" || result.success || result.status === "processing") {
+      await saveTransactionToSupabase({
+        userId: targetUserId,
+        title: "Recharge Pin Purchase",
+        serviceType: "pin",
+        amount: amount || 0,
+        recipient: name_on_card || "Pin Order",
+        status: "successful",
+        reference: result.reference || result.trans_id
+      });
+    }
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
@@ -256,62 +341,43 @@ app.post("/api/v2/bills/electricity/verify", async (req, res) => {
 
 app.post("/api/v2/bills/electricity/pay", async (req, res) => {
   try {
-    const { company, meter_no, meter_type, phone_number, amount, Customer_name } = req.body;
+    const { company, meter_no, meter_type, phone_number, amount, Customer_name, userId, user_id } = req.body;
+    const targetUserId = userId || user_id || req.headers["x-user-id"];
+
     const result = await bigisub.payElectricity({ company, meter_no, meter_type, phone_number, amount, Customer_name, pin: DEFAULT_PIN });
+
+    if (result.status === "successful" || result.success || result.status === "processing") {
+      await saveTransactionToSupabase({
+        userId: targetUserId,
+        title: `Electricity (${company})`,
+        serviceType: "electricity",
+        amount,
+        recipient: meter_no,
+        status: "successful",
+        reference: result.reference || result.trans_id
+      });
+    }
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
   }
 });
 
-// EDUCATION PINS (EXAM RESULT CHECKERS)
-app.get("/api/v2/bills/result-checker/prices", async (_req, res) => {
+// GET USER TRANSACTIONS
+app.get("/api/v2/transactions/:userId", async (req, res) => {
   try {
-    const prices = await bigisub.getEducationPrices();
-    res.json(prices);
+    const { data: txs, error } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("user_id", req.params.userId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json({ success: true, data: txs || [] });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
-});
-
-app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
-  try {
-    const { exam, quantity } = req.body;
-    const result = await bigisub.purchaseEducationPin({ exam, quantity, pin_code: DEFAULT_PIN });
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
-  }
-});
-
-// AIRTIME TO CASH
-app.post("/api/v2/airtime-to-cash/submit", async (req, res) => {
-  const { network, phone_number, amount } = req.body;
-  res.json({
-    success: true,
-    message: "Airtime to Cash request logged",
-    data: {
-      destination_number: "08031234567",
-      rate: "80%",
-      expected_cash: amount * 0.8,
-      status: "pending_transfer"
-    }
-  });
-});
-
-// NIN / BVN VERIFICATION
-app.post("/api/v2/identity/verify", async (req, res) => {
-  const { id_type, id_number } = req.body;
-  res.json({
-    success: true,
-    message: "Identity verified successfully",
-    data: {
-      id_type,
-      id_number,
-      full_name: "Verified User",
-      status: "VALID"
-    }
-  });
 });
 
 // STUBS & SERVER START
