@@ -1,145 +1,63 @@
 const axios = require("axios");
 
-const BIGISUB_BASE_URL = process.env.BIGISUB_BASE_URL || "https://api.bigisub.ng";
-const API_TOKEN = process.env.BIGISUB_API_KEY;
+const BIGISUB_BASE_URL = "https://api.bigisub.ng";
+const BIGISUB_TOKEN = process.env.BIGISUB_TOKEN || process.env.BIGISUB_API_KEY;
 
-const bigisubClient = axios.create({
+const client = axios.create({
   baseURL: BIGISUB_BASE_URL,
   headers: {
-    Authorization: `Token ${API_TOKEN}`,
-    "Content-Type": "application/json",
-  },
+    "Authorization": `Token ${BIGISUB_TOKEN}`,
+    "Content-Type": "application/json"
+  }
 });
 
-// -------------------------------------------------------------
-// 1. AIRTIME
-// -------------------------------------------------------------
-exports.purchaseAirtime = async ({ network, phone_number, amount, pin, airtime_type = "vtu" }) => {
-  const res = await bigisubClient.post("/api/v2/vtu/airtime/purchase/", {
-    network: Number(network),
-    phone_number,
-    amount: String(amount),
-    airtime_type,
-    pin,
-  });
-  return res.data;
-};
+// Map string or integer network identifiers to exact spec integers: 1=MTN, 2=Airtel, 3=Glo, 4=9Mobile
+function getNetworkId(network) {
+  const map = {
+    "1": 1, "mtn": 1,
+    "2": 2, "airtel": 2,
+    "3": 3, "glo": 3,
+    "4": 4, "9mobile": 4, "eti": 4
+  };
+  const key = String(network || "").toLowerCase().trim();
+  return map[key] || 1;
+}
 
-// -------------------------------------------------------------
-// 2. DATA BUNDLES
-// -------------------------------------------------------------
-exports.getDataPlans = async (networkId = null) => {
-  const url = networkId ? `/api/v2/vtu/data/plans/?network=${networkId}` : "/api/v2/vtu/data/plans/";
-  const res = await bigisubClient.get(url);
-  return res.data;
-};
+async function getDataPlans(networkInput) {
+  const networkId = getNetworkId(networkInput);
+  try {
+    const res = await client.get(`/api/v2/vtu/data/plans/?network=${networkId}`);
+    // Spec returns: { success: true, data: [ { id, network, network_name, size, amount, validity... } ] }
+    if (res.data && res.data.success && Array.isArray(res.data.data)) {
+      return res.data.data;
+    }
+    return Array.isArray(res.data) ? res.data : [];
+  } catch (err) {
+    console.error("❌ Bigisub getDataPlans Error:", err.response?.data || err.message);
+    throw err;
+  }
+}
 
-exports.purchaseData = async ({ network, plan, phone_number, pin, ported_number = true }) => {
-  const res = await bigisubClient.post("/api/v2/vtu/data/purchase/", {
-    network: Number(network),
-    plan: Number(plan),
-    phone_number,
-    pin,
-    ported_number,
-  });
-  return res.data;
-};
+async function purchaseData({ network, plan, phone_number, pin }) {
+  const networkId = getNetworkId(network);
+  try {
+    const payload = {
+      network: networkId,
+      plan: Number(plan),
+      phone_number: String(phone_number).trim(),
+      pin: String(pin || process.env.BIGISUB_PIN || "1234"),
+      ported_number: true
+    };
+    const res = await client.post("/api/v2/vtu/data/purchase/", payload);
+    return res.data;
+  } catch (err) {
+    console.error("❌ Bigisub purchaseData Error:", err.response?.data || err.message);
+    throw err;
+  }
+}
 
-// -------------------------------------------------------------
-// 3. CABLE TV
-// -------------------------------------------------------------
-exports.getCablePlans = async (cableName) => {
-  const res = await bigisubClient.get(`/api/v2/vtu/cable/plans/?cable_name=${cableName}`);
-  return res.data;
-};
-
-exports.verifyCable = async ({ cable_name, card_no }) => {
-  const res = await bigisubClient.post("/api/v2/vtu/cable/verify/", { cable_name, card_no });
-  return res.data;
-};
-
-exports.purchaseCable = async ({ cable_type, card_no, phone_number, amount, Customer, pin }) => {
-  const res = await bigisubClient.post("/api/v2/vtu/cable/purchase/", {
-    cable_type,
-    card_no,
-    phone_number,
-    amount: Number(amount),
-    Customer,
-    pin,
-  });
-  return res.data;
-};
-
-// -------------------------------------------------------------
-// 4. RECHARGE CARD PINS
-// -------------------------------------------------------------
-exports.getRechargePinPlans = async (networkId) => {
-  const url = networkId ? `/api/v2/vtu/recharge-pin/plans/?network=${networkId}` : "/api/v2/vtu/recharge-pin/plans/";
-  const res = await bigisubClient.get(url);
-  return res.data;
-};
-
-exports.purchaseRechargePin = async ({ plan, quantity, name_on_card, pin }) => {
-  const res = await bigisubClient.post("/api/v2/vtu/recharge-pin/purchase/", {
-    plan: Number(plan),
-    quantity: Number(quantity),
-    name_on_card,
-    pin,
-  });
-  return res.data;
-};
-
-// -------------------------------------------------------------
-// 5. ELECTRICITY
-// -------------------------------------------------------------
-exports.getElectricityProviders = async () => {
-  const res = await bigisubClient.get("/api/v2/bills/electricity/providers/");
-  return res.data;
-};
-
-exports.verifyMeter = async ({ company, meter_no, meter_type }) => {
-  const res = await bigisubClient.post("/api/v2/bills/electricity/verify/", {
-    company,
-    meter_no,
-    meter_type,
-  });
-  return res.data;
-};
-
-exports.payElectricity = async ({ company, meter_no, meter_type, phone_number, amount, Customer_name, pin }) => {
-  const res = await bigisubClient.post("/api/v2/bills/electricity/pay/", {
-    company,
-    meter_no,
-    meter_type,
-    phone_number,
-    amount: Number(amount),
-    Customer_name,
-    pin,
-  });
-  return res.data;
-};
-
-// -------------------------------------------------------------
-// 6. EDUCATION (RESULT CHECKERS)
-// -------------------------------------------------------------
-exports.getEducationPrices = async () => {
-  const res = await bigisubClient.get("/api/v2/bills/result-checker/prices/");
-  return res.data;
-};
-
-exports.purchaseEducationPin = async ({ exam, quantity, pin_code }) => {
-  const res = await bigisubClient.post("/api/v2/bills/result-checker/purchase/", {
-    exam,
-    quantity: Number(quantity),
-    pin_code,
-  });
-  return res.data;
-};
-
-// -------------------------------------------------------------
-// 7. TRANSACTION STATUS & REQUERY
-// -------------------------------------------------------------
-exports.requeryTransaction = async (tranxId) => {
-  const res = await bigisubClient.post(`/api/v2/anubis/transactions/${tranxId}/requery/`);
-  return res.data;
+module.exports = {
+  getNetworkId,
+  getDataPlans,
+  purchaseData
 };
