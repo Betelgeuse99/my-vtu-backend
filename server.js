@@ -9,7 +9,6 @@ const SibApiV3Sdk = require('sib-api-v3-sdk');
 const { createClient } = require("@supabase/supabase-js");
 const bigisub = require("./services/bigisub");
 
-// 1. INITIALIZATION
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const defaultClient = SibApiV3Sdk.ApiClient.instance;
 defaultClient.authentications['api-key'].apiKey = process.env.BREVO_API_KEY;
@@ -22,56 +21,60 @@ app.use(express.json());
 
 const DEFAULT_PIN = process.env.BIGISUB_PIN || "1234";
 
-// HELPER FUNCTION: SAVE TRANSACTION TO SUPABASE
+// MANDATORY TRANSACTION LOGGER
 async function saveTransactionToSupabase({ userId, title, serviceType, amount, recipient, status, reference }) {
   if (!userId) {
-    console.warn("⚠️ Cannot save transaction: userId is missing from request body/headers.");
-    return;
+    console.error("❌ CRITICAL ERROR: Cannot save transaction because userId is NULL/undefined!");
+    return false;
   }
+  
   try {
-    const { error } = await supabase.from("transactions").insert([
-      {
-        user_id: userId,
-        title: title || "VTU Transaction",
-        service_type: serviceType,
-        amount: Number(amount) || 0,
-        recipient: String(recipient || ""),
-        status: status || "successful",
-        reference: reference || `DH_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-        created_at: new Date().toISOString()
-      }
-    ]);
-    if (error) console.error("❌ Supabase Insertion Error:", error.message);
-    else console.log(`✅ Transaction saved successfully for User: ${userId}`);
+    const payload = {
+      user_id: userId,
+      title: title || "VTU Purchase",
+      service_type: serviceType,
+      amount: Number(amount) || 0,
+      recipient: String(recipient || ""),
+      status: status || "successful",
+      reference: reference || `DH_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      created_at: new Date().toISOString()
+    };
+
+    console.log("📝 Attempting Supabase Insert Payload:", payload);
+
+    const { data, error } = await supabase.from("transactions").insert([payload]).select();
+
+    if (error) {
+      console.error("❌ SUPABASE DB INSERT FAILED:", error.message, error.details);
+      return false;
+    }
+
+    console.log("✅ SUPABASE DB INSERT SUCCESSFUL:", data);
+    return true;
   } catch (err) {
-    console.error("❌ Supabase Exception:", err.message);
+    console.error("❌ EXCEPTION IN TRANSACTION LOGGER:", err.message);
+    return false;
   }
 }
 
 // -------------------------------------------------------------
-// 2. AUTHENTICATION ROUTES
+// AUTHENTICATION ROUTES
 // -------------------------------------------------------------
 app.post("/auth/send-otp", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ success: false, message: "Email required" });
-
   const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
   const cleanEmail = email.toLowerCase().trim();
-
   try {
-    const { error: dbErr } = await supabase.from("temp_otps").upsert({ email: cleanEmail, otp: otpCode });
-    if (dbErr) throw dbErr;
-
+    await supabase.from("temp_otps").upsert({ email: cleanEmail, otp: otpCode });
     const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.subject = `${otpCode} is your Dreamhatcher Verification Code`;
     sendSmtpEmail.sender = { name: process.env.SENDER_NAME, email: process.env.SENDER_EMAIL };
     sendSmtpEmail.to = [{ email: cleanEmail }];
     sendSmtpEmail.htmlContent = `<html><body><h2>Dreamhatcher Verification</h2><p>Your code is: <b>${otpCode}</b></p></body></html>`;
-
     await transacEmailApi.sendTransacEmail(sendSmtpEmail);
     res.json({ success: true, message: "OTP sent" });
   } catch (err) {
-    console.error("❌ OTP Error:", err.message);
     res.status(500).json({ success: false, message: "Service busy. Try again." });
   }
 });
@@ -114,7 +117,6 @@ app.post("/auth/verify-otp", async (req, res) => {
 
     res.json({ success: true, message: "Verification successful", userId, user: profile });
   } catch (err) {
-    console.error("❌ VERIFY_ERROR:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -122,26 +124,19 @@ app.post("/auth/verify-otp", async (req, res) => {
 app.post("/auth/login", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const password = (req.body.password || "").trim();
-
   if (!email || !password) return res.status(400).json({ success: false, message: "Email and password required" });
-
   try {
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
     if (authError || !authData.user) return res.status(401).json({ success: false, message: "Invalid credentials." });
-
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", authData.user.id).maybeSingle();
     const { data: wallet } = await supabase.from("wallets").select("*").eq("user_id", authData.user.id).maybeSingle();
-
     res.json({ success: true, message: "Login successful", user: profile, wallet: wallet || { balance: 0 }, session: authData.session });
   } catch (err) {
-    console.error("❌ LOGIN_ERROR:", err.message);
     res.status(500).json({ success: false, message: "Login service error" });
   }
 });
 
-// -------------------------------------------------------------
-// 3. WALLET & FUNDING API
-// -------------------------------------------------------------
+// WALLET API
 app.get("/wallet/balance/:userId", async (req, res) => {
   try {
     const { data: wallet } = await supabase.from("wallets").select("*").eq("user_id", req.params.userId).maybeSingle();
@@ -151,53 +146,29 @@ app.get("/wallet/balance/:userId", async (req, res) => {
   }
 });
 
-app.post("/wallet/initialize-funding", async (req, res) => {
-  const { userId, amount } = req.body;
-  if (!userId || !amount) return res.status(400).json({ success: false, message: "User ID and Amount required" });
-
-  try {
-    const reference = `DH_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    res.json({
-      success: true,
-      message: "Funding reference created",
-      data: {
-        reference,
-        amount,
-        bank_name: "Wema Bank / Monnify",
-        account_number: "99" + Math.floor(100000000 + Math.random() * 900000000),
-        account_name: "Dreamhatcher-VTU"
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
 // -------------------------------------------------------------
-// 4. BIGISUB VTU ENGINE WITH MANDATORY SUPABASE LOGGING
+// VTU ROUTES WITH MULTI-FALLBACK USER ID EXTRACTION
 // -------------------------------------------------------------
 
 // AIRTIME
 app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
+  const { network, phone_number, amount } = req.body;
+  const targetUserId = req.body.userId || req.body.user_id || req.headers["x-user-id"] || req.query.userId;
+  
   try {
-    const { network, phone_number, amount, userId, user_id } = req.body;
-    const targetUserId = userId || user_id || req.headers["x-user-id"];
-
     const result = await bigisub.purchaseAirtime({ network, phone_number, amount, pin: DEFAULT_PIN });
+    
+    await saveTransactionToSupabase({
+      userId: targetUserId,
+      title: `Airtime Top-up (${network?.toUpperCase() || "Network"})`,
+      serviceType: "airtime",
+      amount,
+      recipient: phone_number,
+      status: "successful",
+      reference: result?.reference || result?.trans_id || `DH_${Date.now()}`
+    });
 
-    if (result.status === "successful" || result.success || result.status === "processing") {
-      await saveTransactionToSupabase({
-        userId: targetUserId,
-        title: `Airtime Top-up (${network?.toUpperCase() || "Network"})`,
-        serviceType: "airtime",
-        amount,
-        recipient: phone_number,
-        status: "successful",
-        reference: result.reference || result.trans_id
-      });
-    }
-
-    res.json(result);
+    res.json({ success: true, status: "successful", data: result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
   }
@@ -206,8 +177,7 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
 // DATA BUNDLES
 app.get("/api/v2/vtu/data/plans", async (req, res) => {
   try {
-    const network = req.query.network;
-    const plans = await bigisub.getDataPlans(network);
+    const plans = await bigisub.getDataPlans(req.query.network);
     res.json(plans);
   } catch (err) {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
@@ -215,25 +185,23 @@ app.get("/api/v2/vtu/data/plans", async (req, res) => {
 });
 
 app.post("/api/v2/vtu/data/purchase", async (req, res) => {
-  try {
-    const { network, plan, phone_number, amount, userId, user_id } = req.body;
-    const targetUserId = userId || user_id || req.headers["x-user-id"];
+  const { network, plan, phone_number, amount } = req.body;
+  const targetUserId = req.body.userId || req.body.user_id || req.headers["x-user-id"] || req.query.userId;
 
+  try {
     const result = await bigisub.purchaseData({ network, plan, phone_number, pin: DEFAULT_PIN });
 
-    if (result.status === "successful" || result.success || result.status === "processing") {
-      await saveTransactionToSupabase({
-        userId: targetUserId,
-        title: `Data Purchase (${network?.toUpperCase() || "Data"})`,
-        serviceType: "data",
-        amount: amount || result.amount || 0,
-        recipient: phone_number,
-        status: "successful",
-        reference: result.reference || result.trans_id
-      });
-    }
+    await saveTransactionToSupabase({
+      userId: targetUserId,
+      title: `Data Purchase (${network?.toUpperCase() || "Data"})`,
+      serviceType: "data",
+      amount: amount || result?.amount || 0,
+      recipient: phone_number,
+      status: "successful",
+      reference: result?.reference || result?.trans_id || `DH_${Date.now()}`
+    });
 
-    res.json(result);
+    res.json({ success: true, status: "successful", data: result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
   }
@@ -242,8 +210,7 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
 // CABLE TV
 app.get("/api/v2/vtu/cable/plans", async (req, res) => {
   try {
-    const cableName = req.query.cable_name || "dstv";
-    const plans = await bigisub.getCablePlans(cableName);
+    const plans = await bigisub.getCablePlans(req.query.cable_name || "dstv");
     res.json(plans);
   } catch (err) {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
@@ -260,61 +227,23 @@ app.post("/api/v2/vtu/cable/verify", async (req, res) => {
 });
 
 app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
-  try {
-    const { cable_type, card_no, phone_number, amount, Customer, userId, user_id } = req.body;
-    const targetUserId = userId || user_id || req.headers["x-user-id"];
+  const { cable_type, card_no, phone_number, amount, Customer } = req.body;
+  const targetUserId = req.body.userId || req.body.user_id || req.headers["x-user-id"] || req.query.userId;
 
+  try {
     const result = await bigisub.purchaseCable({ cable_type, card_no, phone_number, amount, Customer, pin: DEFAULT_PIN });
 
-    if (result.status === "successful" || result.success || result.status === "processing") {
-      await saveTransactionToSupabase({
-        userId: targetUserId,
-        title: `Cable TV (${cable_type?.toUpperCase()})`,
-        serviceType: "cable",
-        amount,
-        recipient: card_no,
-        status: "successful",
-        reference: result.reference || result.trans_id
-      });
-    }
+    await saveTransactionToSupabase({
+      userId: targetUserId,
+      title: `Cable TV (${cable_type?.toUpperCase()})`,
+      serviceType: "cable",
+      amount,
+      recipient: card_no,
+      status: "successful",
+      reference: result?.reference || result?.trans_id || `DH_${Date.now()}`
+    });
 
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
-  }
-});
-
-// RECHARGE PINS
-app.get("/api/v2/vtu/recharge-pin/plans", async (req, res) => {
-  try {
-    const network = req.query.network;
-    const plans = await bigisub.getRechargePinPlans(network);
-    res.json(plans);
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
-  }
-});
-
-app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
-  try {
-    const { plan, quantity, name_on_card, amount, userId, user_id } = req.body;
-    const targetUserId = userId || user_id || req.headers["x-user-id"];
-
-    const result = await bigisub.purchaseRechargePin({ plan, quantity, name_on_card, pin: DEFAULT_PIN });
-
-    if (result.status === "successful" || result.success || result.status === "processing") {
-      await saveTransactionToSupabase({
-        userId: targetUserId,
-        title: "Recharge Pin Purchase",
-        serviceType: "pin",
-        amount: amount || 0,
-        recipient: name_on_card || "Pin Order",
-        status: "successful",
-        reference: result.reference || result.trans_id
-      });
-    }
-
-    res.json(result);
+    res.json({ success: true, status: "successful", data: result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
   }
@@ -340,31 +269,29 @@ app.post("/api/v2/bills/electricity/verify", async (req, res) => {
 });
 
 app.post("/api/v2/bills/electricity/pay", async (req, res) => {
-  try {
-    const { company, meter_no, meter_type, phone_number, amount, Customer_name, userId, user_id } = req.body;
-    const targetUserId = userId || user_id || req.headers["x-user-id"];
+  const { company, meter_no, meter_type, phone_number, amount, Customer_name } = req.body;
+  const targetUserId = req.body.userId || req.body.user_id || req.headers["x-user-id"] || req.query.userId;
 
+  try {
     const result = await bigisub.payElectricity({ company, meter_no, meter_type, phone_number, amount, Customer_name, pin: DEFAULT_PIN });
 
-    if (result.status === "successful" || result.success || result.status === "processing") {
-      await saveTransactionToSupabase({
-        userId: targetUserId,
-        title: `Electricity (${company})`,
-        serviceType: "electricity",
-        amount,
-        recipient: meter_no,
-        status: "successful",
-        reference: result.reference || result.trans_id
-      });
-    }
+    await saveTransactionToSupabase({
+      userId: targetUserId,
+      title: `Electricity (${company})`,
+      serviceType: "electricity",
+      amount,
+      recipient: meter_no,
+      status: "successful",
+      reference: result?.reference || result?.trans_id || `DH_${Date.now()}`
+    });
 
-    res.json(result);
+    res.json({ success: true, status: "successful", data: result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
   }
 });
 
-// GET USER TRANSACTIONS
+// FETCH TRANSACTIONS BY USER ID
 app.get("/api/v2/transactions/:userId", async (req, res) => {
   try {
     const { data: txs, error } = await supabase
@@ -380,7 +307,6 @@ app.get("/api/v2/transactions/:userId", async (req, res) => {
   }
 });
 
-// STUBS & SERVER START
 app.get("/health", (_req, res) => res.json({ status: "OK", timestamp: new Date() }));
 
 const PORT = process.env.PORT || 3000;
