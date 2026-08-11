@@ -177,10 +177,22 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
 // DATA BUNDLES
 app.get("/api/v2/vtu/data/plans", async (req, res) => {
   try {
-    const plans = await bigisub.getDataPlans(req.query.network);
-    res.json(plans);
+    const rawNetwork = req.query.network || "mtn";
+    const networkMap = { "1": "mtn", "2": "airtel", "3": "glo", "4": "9mobile" };
+    const network = networkMap[rawNetwork] || rawNetwork.toString().toLowerCase().trim();
+
+    const plans = await bigisub.getDataPlans(network);
+
+    // Normalize response into a flat array regardless of Bigisub key wrapping
+    const planArray = Array.isArray(plans) 
+      ? plans 
+      : (plans?.plans || plans?.data || plans?.plans_List || []);
+
+    console.log("📦 Returned " + planArray.length + " plans for network: " + network);
+    return res.json(planArray);
   } catch (err) {
-    res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
+    console.error("❌ Data Plans Fetch Error:", err.response?.data || err.message);
+    return res.status(500).json({ success: false, message: "Failed to fetch plans", plans: [] });
   }
 });
 
