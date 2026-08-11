@@ -97,3 +97,29 @@ app.get("/health", (_req, res) => res.json({ status: "OK", timestamp: new Date()
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Production Server Active on port ${PORT}`));
+
+
+// RECHARGE PIN PLANS
+app.get("/api/v2/vtu/recharge-pin/plans", async (req, res) => {
+  try {
+    const netId = getNetworkId(req.query.network);
+    const response = await bigiClient.get(`/api/v2/vtu/recharge-pin/plans/?network=${netId}`);
+    const plans = response.data?.data || (Array.isArray(response.data) ? response.data : []);
+
+    // Normalize data so Kotlin receives size, price, and info cleanly
+    const normalized = plans.map(p => ({
+      id: p.id,
+      network: p.network,
+      network_name: p.network_name,
+      size: p.size || `N${p.regular_price || 0}`,
+      regular_price: p.regular_price || p.amount || 0,
+      corporate_price: p.corporate_price || 0,
+      info: p.info || `${p.network_name || "MTN"} ${p.size || ""} Recharge Pin`
+    }));
+
+    res.json({ success: true, data: normalized });
+  } catch (err) {
+    console.error("❌ Recharge Pin Fetch Error:", err.response?.data || err.message);
+    res.status(500).json({ success: false, message: err.message, data: [] });
+  }
+});
