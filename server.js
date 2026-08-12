@@ -489,8 +489,7 @@ app.get("/api/v2/bills/result-checker/prices", async (_req, res) => {
   }
 });
 
-// HEALTH CHECK
-app.get("/health", (_req, res) => res.json({ status: "OK", timestamp: new Date() }));
+// -------------------------------------------------------------
+// 4. DUAL KEEP-WARM HEALTH ENDPOINT (RENDER & SUPABASE)
+// -------------------------------------------------------------
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Dreamhatcher Production Server active on port ${PORT}`));
