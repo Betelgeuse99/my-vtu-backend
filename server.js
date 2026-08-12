@@ -6,6 +6,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const axios = require("axios");
+const https = require("https");
 const { createClient } = require("@supabase/supabase-js");
 
 // 1. INITIALIZATION & CLIENTS
@@ -31,13 +32,13 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
-// Helper to normalize network identifiers for Bigisub (1=MTN, 2=Airtel, 3=Glo, 4=9Mobile)
+// Helper to normalize network identifiers for Bigisub (1=MTN, 2=Glo, 3=Airtel, 4=9Mobile)
 function getNetworkId(net) {
-  const map = { "1": 1, "mtn": 1, "2": 2, "airtel": 2, "3": 3, "glo": 3, "4": 4, "9mobile": 4 };
+  const map = { "1": 1, "mtn": 1, "2": 2, "glo": 2, "3": 3, "airtel": 3, "4": 4, "9mobile": 4 };
   return map[String(net || "").toLowerCase().trim()] || 1;
 }
 
-// Helper to normalize cable provider strings (dstv, gotv, startimes, showmax)
+// Helper to normalize cable provider strings
 function getCableCode(provider) {
   const clean = String(provider || "").toLowerCase().trim();
   if (clean.includes("gotv")) return "gotv";
@@ -48,112 +49,7 @@ function getCableCode(provider) {
 }
 
 // -------------------------------------------------------------
-// 2. EMAIL TEMPLATES (REGISTRATION & PASSWORD RESET)
-// -------------------------------------------------------------
-function getRegisterEmailHtml(otpCode) {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dreamhatcher Verification</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f4f6f9; padding: 40px 10px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 500px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); border: 1px solid #e5e7eb;">
-          <tr>
-            <td align="center" style="background-color: #0d1b2a; padding: 32px 20px;">
-              <h1 style="margin: 0; color: #f59e0b; font-size: 24px; font-weight: 800; letter-spacing: 0.5px;">DREAMHATCHER</h1>
-              <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 13px; font-weight: 500;">Security & Authentication</p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 36px 32px; text-align: center;">
-              <h2 style="margin: 0 0 12px 0; color: #1e293b; font-size: 20px; font-weight: 700;">Verify Your Email Address</h2>
-              <p style="margin: 0 0 28px 0; color: #64748b; font-size: 14px; line-height: 1.6;">
-                Thank you for choosing Dreamhatcher. Use the One-Time Password (OTP) below to complete your registration request.
-              </p>
-              <div style="background-color: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 12px; padding: 20px; margin: 0 auto 28px auto; max-width: 280px;">
-                <span style="font-family: 'Courier New', Courier, monospace; font-size: 32px; font-weight: 800; color: #0d1b2a; letter-spacing: 8px;">${otpCode}</span>
-              </div>
-              <p style="margin: 0 0 8px 0; color: #64748b; font-size: 13px;">
-                This code will expire in <strong>10 minutes</strong>.
-              </p>
-              <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">
-                If you did not request this code, please ignore this email.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="background-color: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #f1f5f9;">
-              <p style="margin: 0; color: #94a3b8; font-size: 12px;">
-                &copy; 2026 Dreamhatcher VTU. All rights reserved.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-}
-
-function getResetEmailHtml(otpCode) {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reset Your Password</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f4f6f9; padding: 40px 10px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 500px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); border: 1px solid #e5e7eb;">
-          <tr>
-            <td align="center" style="background-color: #0d1b2a; padding: 32px 20px;">
-              <h1 style="margin: 0; color: #f59e0b; font-size: 24px; font-weight: 800; letter-spacing: 0.5px;">DREAMHATCHER</h1>
-              <p style="margin: 4px 0 0 0; color: #ef4444; font-size: 13px; font-weight: 600;">Password Reset Request</p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 36px 32px; text-align: center;">
-              <h2 style="margin: 0 0 12px 0; color: #1e293b; font-size: 20px; font-weight: 700;">Reset Your Password</h2>
-              <p style="margin: 0 0 28px 0; color: #64748b; font-size: 14px; line-height: 1.6;">
-                We received a request to reset your Dreamhatcher account password. Enter the code below to proceed:
-              </p>
-              <div style="background-color: #fef2f2; border: 2px dashed #fca5a5; border-radius: 12px; padding: 20px; margin: 0 auto 28px auto; max-width: 280px;">
-                <span style="font-family: 'Courier New', Courier, monospace; font-size: 32px; font-weight: 800; color: #991b1b; letter-spacing: 8px;">${otpCode}</span>
-              </div>
-              <p style="margin: 0 0 8px 0; color: #64748b; font-size: 13px;">
-                This reset code expires in <strong>10 minutes</strong>.
-              </p>
-              <p style="margin: 0; color: #dc2626; font-size: 12px; line-height: 1.5; font-weight: 500;">
-                If you did not request a password reset, please secure your account or ignore this email.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="background-color: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #f1f5f9;">
-              <p style="margin: 0; color: #94a3b8; font-size: 12px;">
-                &copy; 2026 Dreamhatcher VTU. All rights reserved.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-}
-
-// -------------------------------------------------------------
-// 3. AUTHENTICATION ROUTES (Native Brevo API)
+// 2. AUTHENTICATION ROUTES (Native Brevo API)
 // -------------------------------------------------------------
 app.post("/auth/send-otp", async (req, res) => {
   const { email } = req.body;
@@ -175,7 +71,7 @@ app.post("/auth/send-otp", async (req, res) => {
         sender: { name: process.env.SENDER_NAME || "Dreamhatcher", email: process.env.SENDER_EMAIL },
         to: [{ email: cleanEmail }],
         subject: `${otpCode} is your Dreamhatcher Verification Code`,
-        htmlContent: getRegisterEmailHtml(otpCode)
+        htmlContent: `<html><body><h2>Dreamhatcher Verification</h2><p>Your code is: <b style="font-size:24px;">${otpCode}</b></p></body></html>`
       },
       {
         headers: {
@@ -189,43 +85,6 @@ app.post("/auth/send-otp", async (req, res) => {
   } catch (err) {
     console.error("❌ Send OTP Error:", err.response?.data || err.message);
     res.status(500).json({ success: false, message: "Failed to send OTP code" });
-  }
-});
-
-app.post("/auth/send-reset-otp", async (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ success: false, message: "Email required" });
-
-  const cleanEmail = email.toLowerCase().trim();
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-  try {
-    const { error: dbErr } = await supabase
-      .from("temp_otps")
-      .upsert({ email: cleanEmail, otp: otpCode, created_at: new Date() }, { onConflict: "email" });
-
-    if (dbErr) console.warn("⚠️ temp_otps warning:", dbErr.message);
-
-    await axios.post(
-      "https://api.brevo.com/v3/smtp/email",
-      {
-        sender: { name: process.env.SENDER_NAME || "Dreamhatcher", email: process.env.SENDER_EMAIL },
-        to: [{ email: cleanEmail }],
-        subject: `${otpCode} is your Password Reset Code`,
-        htmlContent: getResetEmailHtml(otpCode)
-      },
-      {
-        headers: {
-          "api-key": process.env.BREVO_API_KEY,
-          "content-type": "application/json"
-        }
-      }
-    );
-
-    res.json({ success: true, message: "Password reset code sent" });
-  } catch (err) {
-    console.error("❌ Send Reset OTP Error:", err.response?.data || err.message);
-    res.status(500).json({ success: false, message: "Failed to send reset code" });
   }
 });
 
@@ -318,7 +177,7 @@ app.post("/auth/login", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 4. BIGISUB VTU & UTILITIES ENGINE
+// 3. BIGISUB VTU & UTILITIES ENGINE
 // -------------------------------------------------------------
 
 // AIRTIME
@@ -367,7 +226,7 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
   }
 });
 
-// CABLE TV (FIXES VERIFICATION & PLANS)
+// CABLE TV
 app.get("/api/v2/vtu/cable/plans", async (req, res) => {
   try {
     const cableName = getCableCode(req.query.cable_name || req.query.provider || "gotv");
@@ -388,8 +247,6 @@ app.post("/api/v2/vtu/cable/verify", async (req, res) => {
       return res.status(400).json({ success: false, message: "Smartcard / IUC number must be at least 8 characters" });
     }
 
-    console.log(`📡 Verifying Cable: provider=${provider}, card_no=${cardNo}`);
-
     const response = await bigiClient.post("/api/v2/vtu/cable/verify/", {
       cable_name: provider,
       card_no: cardNo
@@ -407,10 +264,9 @@ app.post("/api/v2/vtu/cable/verify", async (req, res) => {
       }
     });
   } catch (err) {
-    console.error("❌ Cable Verify Error:", err.response?.data || err.message);
     res.status(400).json({ 
       success: false, 
-      message: err.response?.data?.message || err.response?.data?.detail || "Customer account not found or invalid smartcard number" 
+      message: err.response?.data?.message || err.response?.data?.detail || "Customer account not found" 
     });
   }
 });
@@ -478,7 +334,7 @@ app.post("/api/v2/bills/electricity/verify", async (req, res) => {
   }
 });
 
-// EDUCATION (EXAM PRICES)
+// EDUCATION
 app.get("/api/v2/bills/result-checker/prices", async (_req, res) => {
   try {
     const response = await bigiClient.get("/api/v2/bills/result-checker/prices/");
@@ -492,4 +348,29 @@ app.get("/api/v2/bills/result-checker/prices", async (_req, res) => {
 // -------------------------------------------------------------
 // 4. DUAL KEEP-WARM HEALTH ENDPOINT (RENDER & SUPABASE)
 // -------------------------------------------------------------
+app.get("/health", async (_req, res) => {
+  try {
+    const { error } = await supabase.from("temp_otps").select("email").limit(1);
+    if (error) throw error;
+    res.json({ status: "OK", db: "connected", timestamp: new Date() });
+  } catch (err) {
+    res.status(200).json({ status: "OK", db: "degraded", error: err.message, timestamp: new Date() });
+  }
+});
 
+// Dynamic keep-warm self-ping for Render deployment
+const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL;
+
+if (SELF_URL) {
+  const pingUrl = `${SELF_URL}/health`;
+  setInterval(() => {
+    https.get(pingUrl, (response) => {
+      response.resume();
+    }).on("error", (err) => {
+      console.warn("⚠️ Keep-warm ping warning:", err.message);
+    });
+  }, 10 * 60 * 1000);
+}
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Dreamhatcher Production Server active on port ${PORT}`));
