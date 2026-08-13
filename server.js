@@ -266,6 +266,7 @@ app.post("/api/v2/wallet/virtual-account", async (req, res) => {
 });
 // SQUAD AUTOMATED FUNDING WEBHOOK
 // SQUAD AUTOMATED FUNDING WEBHOOK
+// SQUAD AUTOMATED FUNDING WEBHOOK
 app.post("/api/v2/webhooks/squad", async (req, res) => {
   try {
     const payload = req.body;
@@ -291,33 +292,30 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
       return res.status(200).json({ success: true, message: "Transaction already processed" });
     }
 
-    // 2. Resolve User ID by Email
+    // 2. Resolve User ID from profiles
     const cleanEmail = email.trim();
-    let targetUserId = null;
-
-    const { data: users } = await supabase.from("users").select("id").ilike("email", cleanEmail);
-    if (users && users.length > 0) {
-      targetUserId = users[0].id;
-    } else {
-      // Fallback: Check profiles table if users is empty
-      const { data: profiles } = await supabase.from("profiles").select("id").ilike("email", cleanEmail);
-      if (profiles && profiles.length > 0) targetUserId = profiles[0].id;
+    const { data: profiles, error: profErr } = await supabase.from("profiles").select("id").ilike("email", cleanEmail);
+    if (profErr || !profiles || profiles.length === 0) {
+      console.error("❌ Profile Lookup Failed:", profErr?.message || "No profile found");
+      return res.status(404).json({ success: false, message: "User profile not found for email: " + cleanEmail });
     }
 
-    if (!targetUserId) {
-      console.error("❌ Webhook Error: No user ID found for email:", cleanEmail);
-      return res.status(200).json({ success: true, message: "User not found" });
-    }
+    const targetUserId = profiles[0].id;
 
-    // 3. Get or Initialize Wallet Row
+    // 3. Update Wallets Table directly with user_id
     const { data: walletRow } = await supabase.from("wallets").select("id, balance").eq("user_id", targetUserId).single();
     const currentBalance = Number(walletRow?.balance || 0);
     const newBalance = currentBalance + amount;
 
-    if (walletRow) {
-      await supabase.from("wallets").update({ balance: newBalance }).eq("id", walletRow.id);
-    } else {
-      await supabase.from("wallets").insert({ user_id: targetUserId, balance: newBalance });
+    const { data: updatedWallet, error: updateErr } = await supabase
+      .from("wallets")
+      .update({ balance: newBalance })
+      .eq("user_id", targetUserId)
+      .select();
+
+    if (updateErr || !updatedWallet || updatedWallet.length === 0) {
+      console.error("❌ Wallet Update Error:", updateErr?.message || "0 rows updated");
+      return res.status(500).json({ success: false, message: "Failed to update wallet row: " + (updateErr?.message || "Check RLS or user_id") });
     }
 
     // 4. Log Transaction
@@ -333,13 +331,12 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
     });
 
     console.log(`✅ Wallet funded: ${cleanEmail} +₦${amount} (New Balance: ₦${newBalance})`);
-    return res.status(200).json({ success: true, message: "Wallet funded successfully" });
+    return res.json({ success: true, message: "Wallet funded successfully", wallet_data: updatedWallet[0] });
   } catch (err) {
     console.error("❌ Squad Webhook Exception:", err.message);
-    return res.status(200).json({ success: true, message: "Error handled" });
+    return res.status(500).json({ success: false, message: err.message });
   }
-});
-// DATA PLANS & PURCHASE
+});// DATA PLANS & PURCHASE
 app.get("/api/v2/vtu/data/plans", async (req, res) => {
   try {
     const appNetId = Number(req.query.network) || 1;
