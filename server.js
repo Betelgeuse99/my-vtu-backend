@@ -140,7 +140,7 @@ app.post("/auth/verify-otp", async (req, res) => {
       id: userId, full_name: fullName, phone_number: phoneNumber, email: email, email_verified: true
     }, { onConflict: "id" }).select().single();
 
-    await supabase.from("wallets").upsert({ user_id: userId, balance: 0 }, { onConflict: "user_id" });
+    await supabase.from("wallets").upsert({ user_id: userId, wallets: 0 }, { onConflict: "user_id" });
     await supabase.from("temp_otps").delete().eq("email", email);
 
     res.json({ success: true, message: "Verification successful", userId, user: profile });
@@ -171,7 +171,7 @@ app.post("/auth/login", async (req, res) => {
       message: "Login successful", 
       userId: authData.user.id,
       user: profile || { email: email, id: authData.user.id }, 
-      wallet: wallet || { balance: 0 }, 
+      wallet: wallet || { wallets: 0 }, 
       session: authData.session 
     });
   } catch (err) {
@@ -293,24 +293,24 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
     }
 
     // 2. Fetch target user by email
-    const { data: user, error: userErr } = await supabase.from("users").select("id, wallet_balance").eq("email", email.toLowerCase().trim()).single();
+    const { data: user, error: userErr } = await supabase.from("users").select("id, wallets").eq("email", email.toLowerCase().trim()).single();
     if (!user || userErr) {
       console.error("❌ Webhook Error: User not found for email:", email);
       return res.status(200).json({ success: true, message: "User not found" });
     }
 
-    const newBalance = Number(user.wallet_balance || 0) + amount;
+    const newBalance = Number(user.wallets || 0) + amount;
 
     // 3. Update User Wallet Balance in Supabase
-    await supabase.from("users").update({ wallet_balance: newBalance }).eq("id", user.id);
+    await supabase.from("users").update({ wallets: newBalance }).eq("id", user.id);
 
     // 4. Log funding transaction record
     await supabase.from("transactions").insert({
       user_id: user.id,
       type: "deposit",
       amount: amount,
-      balance_before: user.wallet_balance || 0,
-      balance_after: newBalance,
+      wallets_before: user.wallets || 0,
+      wallets_after: newBalance,
       reference: txRef,
       status: "success",
       description: "Automated Virtual Account Topup via Squad"
