@@ -264,6 +264,66 @@ app.post("/api/v2/wallet/virtual-account", async (req, res) => {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
   }
 });
+// SQUAD AUTOMATED FUNDING WEBHOOK
+app.post("/api/v2/webhooks/squad", async (req, res) => {
+  try {
+    const payload = req.body;
+    const bodyData = payload?.Body || payload?.data || payload;
+    const txRef = payload?.TransactionRef || bodyData?.transaction_ref;
+    const status = bodyData?.transaction_status || payload?.status;
+    const email = bodyData?.email || payload?.email;
+    const rawAmount = Number(bodyData?.amount || payload?.amount || 0);
+
+    // Squad amounts are usually sent in Kobo (or Naira depending on payload)
+    // If amount is >= 10000 for a small deposit, convert Kobo -> Naira
+    const amount = rawAmount > 100000 ? rawAmount / 100 : rawAmount;
+
+    if (status !== "Success" && status !== "success" && payload?.Event !== "charge_successful") {
+      return res.status(200).json({ success: true, message: "Ignored non-successful transaction" });
+    }
+
+    if (!email || !txRef || amount <= 0) {
+      return res.status(200).json({ success: true, message: "Invalid payload parameters" });
+    }
+
+    // 1. Check if transaction was already processed to prevent duplicate funding
+    const { data: existingTx } = await supabase.from("transactions").select("id").eq("reference", txRef).single();
+    if (existingTx) {
+      return res.status(200).json({ success: true, message: "Transaction already processed" });
+    }
+
+    // 2. Fetch target user by email
+    const { data: user, error: userErr } = await supabase.from("users").select("id, wallet_balance").eq("email", email.toLowerCase().trim()).single();
+    if (!user || userErr) {
+      console.error("❌ Webhook Error: User not found for email:", email);
+      return res.status(200).json({ success: true, message: "User not found" });
+    }
+
+    const newBalance = Number(user.wallet_balance || 0) + amount;
+
+    // 3. Update User Wallet Balance in Supabase
+    await supabase.from("users").update({ wallet_balance: newBalance }).eq("id", user.id);
+
+    // 4. Log funding transaction record
+    await supabase.from("transactions").insert({
+      user_id: user.id,
+      type: "deposit",
+      amount: amount,
+      balance_before: user.wallet_balance || 0,
+      balance_after: newBalance,
+      reference: txRef,
+      status: "success",
+      description: "Automated Virtual Account Topup via Squad"
+    });
+
+    console.log(`✅ Wallet funded: ${email} +₦${amount} (New Balance: ₦${newBalance})`);
+    return res.status(200).json({ success: true, message: "Wallet funded successfully" });
+  } catch (err) {
+    console.error("❌ Squad Webhook Exception:", err.message);
+    return res.status(200).json({ success: true, message: "Error handled" });
+  }
+});
+
 // DATA PLANS & PURCHASE
 app.get("/api/v2/vtu/data/plans", async (req, res) => {
   try {
