@@ -202,6 +202,70 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
   }
 });
 
+// SQUAD DEDICATED VIRTUAL ACCOUNT CREATION
+app.post("/api/v2/wallet/virtual-account", async (req, res) => {
+  try {
+    const { userId, email, firstName, lastName, phone, bvn } = req.body;
+    if (!userId || !email) return res.status(400).json({ success: false, message: "User ID and Email are required" });
+
+    // 1. Check if user already has an active virtual account in Supabase
+    const { data: user, error: fetchErr } = await supabase.from("users").select("virtual_account_number, virtual_bank_name, virtual_account_name").eq("id", userId).single();
+    
+    if (user?.virtual_account_number) {
+      return res.json({
+        success: true,
+        account_number: user.virtual_account_number,
+        bank_name: user.virtual_bank_name || "GTBANK / SQUAD",
+        account_name: user.virtual_account_name
+      });
+    }
+
+    // 2. Provision with Squad
+    const squadSecret = process.env.SQUAD_SECRET_KEY;
+    const squadBaseUrl = process.env.SQUAD_BASE_URL || "https://sandbox-api-d.squadco.com";
+
+    // Clean name formatting for GTBank/Squad layout
+    const fName = (firstName || "Dreamhatcher").trim();
+    const lName = (lastName || "User").trim();
+    const cleanPhone = phone ? String(phone).replace(/[^0-9]/g, "") : "08000000000";
+
+    const payload = {
+      customer_identifier: String(userId),
+      first_name: fName,
+      last_name: lName,
+      mobile_num: cleanPhone,
+      email: String(email).toLowerCase().trim(),
+      bvn: bvn || "22222222222" // Sandbox fallback BVN
+    };
+
+    const squadRes = await axios.post(`${squadBaseUrl}/virtual-account/individual`, payload, {
+      headers: { Authorization: `Bearer ${squadSecret}`, "Content-Type": "application/json" }
+    });
+
+    if (squadRes.data?.status === 200 || squadRes.data?.success) {
+      const accData = squadRes.data.data;
+      const accNo = accData.virtual_account_number;
+      const bankName = accData.bank_name || "GTBANK / SQUAD";
+      const accName = accData.account_name || `DREAMHATCHER-${fName}`;
+
+      // 3. Save to Supabase
+      await supabase.from("users").update({
+        virtual_account_number: accNo,
+        virtual_bank_name: bankName,
+        virtual_account_name: accName,
+        squad_customer_id: String(userId)
+      }).eq("id", userId);
+
+      return res.json({ success: true, account_number: accNo, bank_name: bankName, account_name: accName });
+    } else {
+      throw new Error(squadRes.data?.message || "Failed to create virtual account with Squad");
+    }
+  } catch (err) {
+    console.error("❌ Squad Account Creation Error:", err.response?.data || err.message);
+    res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
+  }
+});
+
 // DATA PLANS & PURCHASE
 app.get("/api/v2/vtu/data/plans", async (req, res) => {
   try {
