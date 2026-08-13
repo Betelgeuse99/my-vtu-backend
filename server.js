@@ -212,17 +212,46 @@ app.get("/api/v2/vtu/data/plans", async (req, res) => {
 
 app.post("/api/v2/vtu/data/purchase", async (req, res) => {
   try {
-    const { network, plan, phone_number } = req.body;
-    const response = await bigiClient.post("/api/v2/vtu/data/purchase/", {
+    const { network, plan, plan_id, phone_number, pin } = req.body;
+
+    // 1. Resolve plan identifier whether frontend sends 'plan' or 'plan_id'
+    const targetPlan = plan || plan_id;
+    const numericPlanId = Number(targetPlan);
+
+    if (!targetPlan || isNaN(numericPlanId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or missing plan ID"
+      });
+    }
+
+    // 2. Format payload for BigiSub API
+    const payload = {
       network: getNetworkId(network),
-      plan: Number(plan),
+      plan: numericPlanId,
       phone_number: String(phone_number).trim(),
-      pin: DEFAULT_PIN,
+      pin: pin ? String(pin).trim() : DEFAULT_PIN,
       ported_number: true
+    };
+
+    // 3. Dispatch purchase request
+    const response = await bigiClient.post("/api/v2/vtu/data/purchase/", payload);
+    return res.json({
+      success: true,
+      message: "Data purchase successful",
+      data: response.data
     });
-    res.json(response.data);
+
   } catch (err) {
-    res.status(400).json({ success: false, message: err.response?.data?.message || err.message });
+    // Detailed error logging to inspect BigiSub validation details in Render logs
+    const bigiError = err.response?.data;
+    console.error("❌ BigiSub API Error:", JSON.stringify(bigiError || err.message, null, 2));
+
+    return res.status(err.response?.status || 400).json({
+      success: false,
+      message: bigiError?.message || bigiError?.detail || err.message,
+      errors: bigiError?.errors || null
+    });
   }
 });
 
