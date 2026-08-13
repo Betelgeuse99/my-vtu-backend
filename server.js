@@ -205,10 +205,34 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
 // DATA PLANS & PURCHASE
 app.get("/api/v2/vtu/data/plans", async (req, res) => {
   try {
-    const netId = getNetworkId(req.query.network);
-    const response = await bigiClient.get(`/api/v2/vtu/data/plans/?network=${netId}`);
-    const plans = response.data?.data || (Array.isArray(response.data) ? response.data : []);
-    res.json({ success: true, data: plans });
+    const appNetId = Number(req.query.network) || 1;
+    const { data: plans, error } = await supabase
+      .from("data_plans")
+      .select("*")
+      .eq("network_id", appNetId)
+      .eq("is_active", true)
+      .order("buy_price", { ascending: true });
+
+    if (error) throw error;
+
+    const formattedPlans = plans.map(p => ({
+      id: Number(p.bigi_plan_id),
+      plan_id: Number(p.bigi_plan_id),
+      network: p.network_id,
+      plantype: p.plan_type,
+      size: p.volume,
+      validity: p.validity,
+      amount: p.retail_price,
+      plan_amount: p.retail_price,
+      buy_price: p.buy_price
+    }));
+
+    res.json({ success: true, data: formattedPlans });
+  } catch (err) {
+    console.error("❌ Data plans fetch error:", err.message);
+    res.status(500).json({ success: false, message: err.message, data: [] });
+  }
+});
   } catch (err) {
     res.status(500).json({ success: false, message: err.message, data: [] });
   }
