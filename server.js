@@ -221,8 +221,8 @@ app.post("/api/v2/wallet/virtual-account", async (req, res) => {
     }
 
     // 2. Provision with Squad
-    const squadSecret = process.env.SQUAD_SECRET_KEY;
-    const squadBaseUrl = process.env.SQUAD_BASE_URL || "https://sandbox-api-d.squadco.com";
+    const squadSecret = process.env.SQUADCO_SECRET_KEY || process.env.SQUAD_SECRET_KEY;
+    let squadBaseUrl = (process.env.SQUAD_BASE_URL || "https://sandbox-api-d.squadco.com").trim().replace(/\/+$/, "");
 
     // Clean name formatting for GTBank/Squad layout
     const fName = (firstName || "Dreamhatcher").trim();
