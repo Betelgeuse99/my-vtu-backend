@@ -233,10 +233,6 @@ app.get("/api/v2/vtu/data/plans", async (req, res) => {
     res.status(500).json({ success: false, message: err.message, data: [] });
   }
 });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message, data: [] });
-  }
-});
 
 app.post("/api/v2/vtu/data/purchase", async (req, res) => {
   try {
