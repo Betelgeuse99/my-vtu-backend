@@ -265,6 +265,7 @@ app.post("/api/v2/wallet/virtual-account", async (req, res) => {
   }
 });
 // SQUAD AUTOMATED FUNDING WEBHOOK
+// SQUAD AUTOMATED FUNDING WEBHOOK
 app.post("/api/v2/webhooks/squad", async (req, res) => {
   try {
     const payload = req.body;
@@ -274,8 +275,6 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
     const email = bodyData?.email || payload?.email;
     const rawAmount = Number(bodyData?.amount || payload?.amount || 0);
 
-    // Squad amounts are usually sent in Kobo (or Naira depending on payload)
-    // If amount is >= 10000 for a small deposit, convert Kobo -> Naira
     const amount = rawAmount > 100000 ? rawAmount / 100 : rawAmount;
 
     if (status !== "Success" && status !== "success" && payload?.Event !== "charge_successful") {
@@ -286,44 +285,60 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
       return res.status(200).json({ success: true, message: "Invalid payload parameters" });
     }
 
-    // 1. Check if transaction was already processed to prevent duplicate funding
+    // 1. Idempotency Check
     const { data: existingTx } = await supabase.from("transactions").select("id").eq("reference", txRef).single();
     if (existingTx) {
       return res.status(200).json({ success: true, message: "Transaction already processed" });
     }
 
-    // 2. Fetch target user by email
-    const { data: user, error: userErr } = await supabase.from("users").select("id, wallets").eq("email", email.toLowerCase().trim()).single();
-    if (!user || userErr) {
-      console.error("❌ Webhook Error: User not found for email:", email);
+    // 2. Resolve User ID by Email
+    const cleanEmail = email.trim();
+    let targetUserId = null;
+
+    const { data: users } = await supabase.from("users").select("id").ilike("email", cleanEmail);
+    if (users && users.length > 0) {
+      targetUserId = users[0].id;
+    } else {
+      // Fallback: Check profiles table if users is empty
+      const { data: profiles } = await supabase.from("profiles").select("id").ilike("email", cleanEmail);
+      if (profiles && profiles.length > 0) targetUserId = profiles[0].id;
+    }
+
+    if (!targetUserId) {
+      console.error("❌ Webhook Error: No user ID found for email:", cleanEmail);
       return res.status(200).json({ success: true, message: "User not found" });
     }
 
-    const newBalance = Number(user.wallets || 0) + amount;
+    // 3. Get or Initialize Wallet Row
+    const { data: walletRow } = await supabase.from("wallets").select("id, balance").eq("user_id", targetUserId).single();
+    const currentBalance = Number(walletRow?.balance || 0);
+    const newBalance = currentBalance + amount;
 
-    // 3. Update User Wallet Balance in Supabase
-    await supabase.from("users").update({ wallets: newBalance }).eq("id", user.id);
+    if (walletRow) {
+      await supabase.from("wallets").update({ balance: newBalance }).eq("id", walletRow.id);
+    } else {
+      await supabase.from("wallets").insert({ user_id: targetUserId, balance: newBalance });
+    }
 
-    // 4. Log funding transaction record
+    // 4. Log Transaction
     await supabase.from("transactions").insert({
-      user_id: user.id,
+      user_id: targetUserId,
       type: "deposit",
       amount: amount,
-      wallets_before: user.wallets || 0,
-      wallets_after: newBalance,
+      balance_before: currentBalance,
+      balance_after: newBalance,
       reference: txRef,
       status: "success",
       description: "Automated Virtual Account Topup via Squad"
     });
 
-    console.log(`✅ Wallet funded: ${email} +₦${amount} (New Balance: ₦${newBalance})`);
+    console.log(`✅ Wallet funded: ${cleanEmail} +₦${amount} (New Balance: ₦${newBalance})`);
     return res.status(200).json({ success: true, message: "Wallet funded successfully" });
   } catch (err) {
     console.error("❌ Squad Webhook Exception:", err.message);
     return res.status(200).json({ success: true, message: "Error handled" });
   }
 });
-
 // DATA PLANS & PURCHASE
 app.get("/api/v2/vtu/data/plans", async (req, res) => {
   try {
