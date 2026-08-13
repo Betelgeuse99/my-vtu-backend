@@ -32,9 +32,14 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
-// Helper to normalize network identifiers for Bigisub (1=MTN, 2=Glo, 3=Airtel, 4=9Mobile)
+// Helper to normalize network identifiers for BigiSub (App: 1=MTN, 2=Glo, 3=Airtel, 4=9Mobile -> BigiSub API: 1=MTN, 2=Airtel, 3=Glo, 4=9Mobile)
 function getNetworkId(net) {
-  const map = { "1": 1, "mtn": 1, "2": 2, "glo": 2, "3": 3, "airtel": 3, "4": 4, "9mobile": 4 };
+  const map = { 
+    "1": 1, "mtn": 1, 
+    "2": 3, "glo": 3,       // App 2 (Glo) -> BigiSub API 3
+    "3": 2, "airtel": 2,    // App 3 (Airtel) -> BigiSub API 2
+    "4": 4, "9mobile": 4, "eti": 4 
+  };
   return map[String(net || "").toLowerCase().trim()] || 1;
 }
 
