@@ -234,7 +234,8 @@ app.post("/api/v2/wallet/virtual-account", async (req, res) => {
       bvn: bvn || "22222222222",
       dob: dob || "01/01/1990",
       gender: gender || "1",
-      address: address || "Nigeria"
+      address: address || "Lagos",
+      beneficiary_account: process.env.SQUAD_BENEFICIARY_ACCOUNT || "0123456789"
     };
 
     const squadRes = await axios.post(`${squadBaseUrl}/virtual-account`, payload, {
@@ -312,11 +313,16 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
 
     // 2. Format payload for BigiSub API
     const payload = {
-      network: getNetworkId(network),
-      plan: numericPlanId,
-      phone_number: String(phone_number).trim(),
-      pin: pin ? String(pin).trim() : DEFAULT_PIN,
-      ported_number: true
+      customer_identifier: String(userId),
+      first_name: (firstName || "Dreamhatcher").trim(),
+      last_name: (lastName || "User").trim(),
+      mobile_num: phone ? String(phone).replace(/[^0-9]/g, "") : "08012345678",
+      email: String(email).toLowerCase().trim(),
+      bvn: bvn || "22222222222",
+      dob: dob || "01/01/1990",
+      gender: gender || "1",
+      address: address || "Lagos",
+      beneficiary_account: process.env.SQUAD_BENEFICIARY_ACCOUNT || "0123456789"
     };
 
     // 3. Dispatch purchase request
