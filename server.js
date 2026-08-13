@@ -205,12 +205,10 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
 // SQUAD DEDICATED VIRTUAL ACCOUNT CREATION
 app.post("/api/v2/wallet/virtual-account", async (req, res) => {
   try {
-    const { userId, email, firstName, lastName, phone, bvn } = req.body;
+    const { userId, email, firstName, lastName, phone, bvn, dob, gender, address } = req.body;
     if (!userId || !email) return res.status(400).json({ success: false, message: "User ID and Email are required" });
 
-    // 1. Check if user already has an active virtual account in Supabase
-    const { data: user, error: fetchErr } = await supabase.from("users").select("virtual_account_number, virtual_bank_name, virtual_account_name").eq("id", userId).single();
-    
+    const { data: user } = await supabase.from("users").select("virtual_account_number, virtual_bank_name, virtual_account_name").eq("id", userId).single();
     if (user?.virtual_account_number) {
       return res.json({
         success: true,
@@ -220,25 +218,26 @@ app.post("/api/v2/wallet/virtual-account", async (req, res) => {
       });
     }
 
-    // 2. Provision with Squad
     const squadSecret = process.env.SQUADCO_SECRET_KEY || process.env.SQUAD_SECRET_KEY;
-    let squadBaseUrl = (process.env.SQUAD_BASE_URL || "https://sandbox-api-d.squadco.com").trim().replace(/\/+$/, "");
-
-    // Clean name formatting for GTBank/Squad layout
-    const fName = (firstName || "Dreamhatcher").trim();
-    const lName = (lastName || "User").trim();
-    const cleanPhone = phone ? String(phone).replace(/[^0-9]/g, "") : "08000000000";
+    let squadBaseUrl = process.env.SQUAD_BASE_URL || "";
+    if (!squadBaseUrl || squadBaseUrl.includes("dva")) {
+      squadBaseUrl = "https://sandbox-api-d.squadco.com";
+    }
+    squadBaseUrl = squadBaseUrl.trim().replace(/\/+$/, "");
 
     const payload = {
       customer_identifier: String(userId),
-      first_name: fName,
-      last_name: lName,
-      mobile_num: cleanPhone,
+      first_name: (firstName || "Dreamhatcher").trim(),
+      last_name: (lastName || "User").trim(),
+      mobile_num: phone ? String(phone).replace(/[^0-9]/g, "") : "08012345678",
       email: String(email).toLowerCase().trim(),
-      bvn: bvn || "22222222222" // Sandbox fallback BVN
+      bvn: bvn || "22222222222",
+      dob: dob || "01/01/1990",
+      gender: gender || "1",
+      address: address || "Nigeria"
     };
 
-    const squadRes = await axios.post(`${squadBaseUrl}/virtual-account/individual`, payload, {
+    const squadRes = await axios.post(`${squadBaseUrl}/virtual-account`, payload, {
       headers: { Authorization: `Bearer ${squadSecret}`, "Content-Type": "application/json" }
     });
 
@@ -246,9 +245,8 @@ app.post("/api/v2/wallet/virtual-account", async (req, res) => {
       const accData = squadRes.data.data;
       const accNo = accData.virtual_account_number;
       const bankName = accData.bank_name || "GTBANK / SQUAD";
-      const accName = accData.account_name || `DREAMHATCHER-${fName}`;
+      const accName = accData.account_name || `DREAMHATCHER-${payload.first_name}`;
 
-      // 3. Save to Supabase
       await supabase.from("users").update({
         virtual_account_number: accNo,
         virtual_bank_name: bankName,
@@ -265,7 +263,6 @@ app.post("/api/v2/wallet/virtual-account", async (req, res) => {
     res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
   }
 });
-
 // DATA PLANS & PURCHASE
 app.get("/api/v2/vtu/data/plans", async (req, res) => {
   try {
