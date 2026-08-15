@@ -11,12 +11,13 @@ const client = axios.create({
   }
 });
 
-// Map string or integer network identifiers to exact spec integers: 1=MTN, 2=Airtel, 3=Glo, 4=9Mobile
+// Map App network id (1=MTN, 2=Glo, 3=Airtel, 4=9Mobile) to BigiSub API id
+// (1=MTN, 2=Airtel, 3=Glo, 4=9Mobile). MUST match server.js / sync_plans.js.
 function getNetworkId(network) {
   const map = {
     "1": 1, "mtn": 1,
-    "2": 2, "airtel": 2,
-    "3": 3, "glo": 3,
+    "2": 3, "glo": 3,
+    "3": 2, "airtel": 2,
     "4": 4, "9mobile": 4, "eti": 4
   };
   const key = String(network || "").toLowerCase().trim();
