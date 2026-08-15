@@ -21,7 +21,7 @@ const DEFAULT_PIN = process.env.BIGISUB_PIN || "1234";
 const bigiClient = axios.create({
   baseURL: BIGISUB_BASE_URL,
   headers: {
-    "Authorization": `Token ${BIGISUB_TOKEN}`,
+    Authorization: "Token " + BIGISUB_TOKEN,
     "Content-Type": "application/json"
   }
 });
@@ -31,18 +31,11 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
-// Helper to normalize network identifiers for BigiSub (App: 1=MTN, 2=Glo, 3=Airtel, 4=9Mobile -> BigiSub API: 1=MTN, 2=Airtel, 3=Glo, 4=9Mobile)
 function getNetworkId(net) {
-  const map = { 
-    "1": 1, "mtn": 1, 
-    "2": 3, "glo": 3,       // App 2 (Glo) -> BigiSub API 3
-    "3": 2, "airtel": 2,    // App 3 (Airtel) -> BigiSub API 2
-    "4": 4, "9mobile": 4, "eti": 4 
-  };
+  const map = { "1": 1, "mtn": 1, "2": 3, "glo": 3, "3": 2, "airtel": 2, "4": 4, "9mobile": 4, "eti": 4 };
   return map[String(net || "").toLowerCase().trim()] || 1;
 }
 
-// Helper to normalize cable provider strings
 function getCableCode(provider) {
   const clean = String(provider || "").toLowerCase().trim();
   if (clean.includes("gotv")) return "gotv";
@@ -50,6 +43,22 @@ function getCableCode(provider) {
   if (clean.includes("star")) return "startimes";
   if (clean.includes("show")) return "showmax";
   return clean;
+}
+
+function formatLocalPhone(phone) {
+  let clean = String(phone || "").replace(/[^0-9]/g, "");
+  if (clean.startsWith("234") && clean.length > 10) {
+    clean = "0" + clean.slice(3);
+  } else if (clean.length === 10 && !clean.startsWith("0")) {
+    clean = "0" + clean;
+  }
+  return clean;
+}
+
+function formatSquadGender(g) {
+  const clean = String(g || "").toLowerCase().trim();
+  if (clean === "female" || clean === "f" || clean === "2") return "2";
+  return "1";
 }
 
 // -------------------------------------------------------------
@@ -75,7 +84,7 @@ app.post("/auth/send-otp", async (req, res) => {
         sender: { name: process.env.SENDER_NAME || "Dreamhatcher", email: process.env.SENDER_EMAIL },
         to: [{ email: cleanEmail }],
         subject: `${otpCode} is your Dreamhatcher Verification Code`,
-        htmlContent: `<html><body><h2>Dreamhatcher Verification</h2><p>Your code is: <b style="font-size:24px;">${otpCode}</b></p></body></html>`
+        htmlContent: `<html><body><h2>Dreamhatcher Verification</h2><p>Your code is: <b>${otpCode}</b></p></body></html>`
       },
       {
         headers: {
@@ -95,8 +104,8 @@ app.post("/auth/send-otp", async (req, res) => {
 app.post("/auth/verify-otp", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const otp = (req.body.otp || "").trim();
-  const password = req.body.password && req.body.password.trim().length >= 6 
-    ? req.body.password.trim() 
+  const password = req.body.password && req.body.password.trim().length >= 6
+    ? req.body.password.trim()
     : "Dreamhatcher@2026#Secure";
   const fullName = req.body.full_name || req.body.fullName || "User";
   const phoneNumber = req.body.phone_number || req.body.phoneNumber || "";
@@ -121,9 +130,9 @@ app.post("/auth/verify-otp", async (req, res) => {
 
     if (existing) {
       userId = existing.id;
-      await supabase.auth.admin.updateUserById(userId, { 
-        password: password, 
-        user_metadata: { full_name: fullName } 
+      await supabase.auth.admin.updateUserById(userId, {
+        password: password,
+        user_metadata: { full_name: fullName }
       });
     } else {
       const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
@@ -140,7 +149,7 @@ app.post("/auth/verify-otp", async (req, res) => {
       id: userId, full_name: fullName, phone_number: phoneNumber, email: email, email_verified: true
     }, { onConflict: "id" }).select().single();
 
-    await supabase.from("wallets").upsert({ user_id: userId, wallets: 0 }, { onConflict: "user_id" });
+    await supabase.from("wallets").upsert({ user_id: userId, balance: 0 }, { onConflict: "user_id" });
     await supabase.from("temp_otps").delete().eq("email", email);
 
     res.json({ success: true, message: "Verification successful", userId, user: profile });
@@ -158,7 +167,7 @@ app.post("/auth/login", async (req, res) => {
 
   try {
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    
+
     if (authError || !authData.user) {
       return res.status(401).json({ success: false, message: "Invalid credentials." });
     }
@@ -166,13 +175,13 @@ app.post("/auth/login", async (req, res) => {
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", authData.user.id).maybeSingle();
     const { data: wallet } = await supabase.from("wallets").select("*").eq("user_id", authData.user.id).maybeSingle();
 
-    res.json({ 
-      success: true, 
-      message: "Login successful", 
+    res.json({
+      success: true,
+      message: "Login successful",
       userId: authData.user.id,
-      user: profile || { email: email, id: authData.user.id }, 
-      wallet: wallet || { wallets: 0 }, 
-      session: authData.session 
+      user: profile || { email: email, id: authData.user.id },
+      wallet: wallet || { balance: 0 },
+      session: authData.session
     });
   } catch (err) {
     console.error("❌ LOGIN_ERROR:", err.message);
@@ -181,92 +190,124 @@ app.post("/auth/login", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 3. BIGISUB VTU & UTILITIES ENGINE
+// 3. SQUAD DEDICATED VIRTUAL ACCOUNT & WEBHOOK
 // -------------------------------------------------------------
-
-// AIRTIME
-app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
-  try {
-    const { network, phone_number, amount } = req.body;
-    const response = await bigiClient.post("/api/v2/vtu/airtime/purchase/", {
-      network: getNetworkId(network),
-      phone_number: String(phone_number).trim(),
-      amount: String(amount),
-      airtime_type: "vtu",
-      pin: DEFAULT_PIN
-    });
-    res.json(response.data);
-  } catch (err) {
-    console.error("❌ Airtime Error:", err.response?.data || err.message);
-    res.status(400).json({ success: false, message: err.response?.data?.message || err.message });
-  }
-});
-
-// SQUAD DEDICATED VIRTUAL ACCOUNT CREATION
 app.post("/api/v2/wallet/virtual-account", async (req, res) => {
   try {
-    const { userId, email, firstName, lastName, phone, bvn, dob, gender, address } = req.body;
-    if (!userId || !email) return res.status(400).json({ success: false, message: "User ID and Email are required" });
+    const { 
+      userId, customer_identifier, 
+      firstName, first_name, 
+      lastName, last_name, 
+      phone, phone_number, mobile_num,
+      bvn, dob, gender, address, email 
+    } = req.body;
 
-    const { data: user } = await supabase.from("users").select("virtual_account_number, virtual_bank_name, virtual_account_name").eq("id", userId).single();
-    if (user?.virtual_account_number) {
+    const targetUserId = userId || customer_identifier;
+    const userEmail = (email || req.user?.email || "").toLowerCase().trim();
+
+    if (!targetUserId || !userEmail) {
+      return res.status(400).json({ success: false, message: "User ID and Email are required" });
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("virtual_account_number, virtual_bank_name, virtual_account_name")
+      .eq("id", targetUserId)
+      .maybeSingle();
+
+    if (profile?.virtual_account_number) {
       return res.json({
         success: true,
-        account_number: user.virtual_account_number,
-        bank_name: user.virtual_bank_name || "GTBANK / SQUAD",
-        account_name: user.virtual_account_name
+        account_number: profile.virtual_account_number,
+        bank_name: profile.virtual_bank_name || "GTBank / Squad",
+        account_name: profile.virtual_account_name
       });
     }
 
-    const squadSecret = process.env.SQUADCO_SECRET_KEY || process.env.SQUAD_SECRET_KEY;
-    let squadBaseUrl = process.env.SQUAD_BASE_URL || "";
-    if (!squadBaseUrl || squadBaseUrl.includes("dva")) {
-      squadBaseUrl = "https://sandbox-api-d.squadco.com";
+    const cleanBvn = String(bvn || "").replace(/\D/g, "");
+    if (!cleanBvn || cleanBvn.length !== 11) {
+      return res.status(400).json({ success: false, message: "Invalid BVN. Must be exactly 11 digits." });
     }
+
+    const cleanPhone = formatLocalPhone(phone || phone_number || mobile_num);
+    const genderCode = formatSquadGender(gender);
+
+    const squadSecret = process.env.SQUADCO_SECRET_KEY || process.env.SQUAD_SECRET_KEY || "";
+    let squadBaseUrl = process.env.SQUAD_BASE_URL || (squadSecret.includes("_test_") ? "https://sandbox-api-d.squadco.com" : "https://api-d.squadco.com");
     squadBaseUrl = squadBaseUrl.trim().replace(/\/+$/, "");
 
     const payload = {
-      customer_identifier: String(userId),
-      first_name: (firstName || "Dreamhatcher").trim(),
-      last_name: (lastName || "User").trim(),
-      mobile_num: phone ? String(phone).replace(/[^0-9]/g, "") : "08012345678",
-      email: String(email).toLowerCase().trim(),
-      bvn: bvn || "22222222222",
-      dob: dob || "01/01/1990",
-      gender: gender || "1",
-      address: address || "Lagos",
+      customer_identifier: String(targetUserId),
+      first_name: String(firstName || first_name || "Customer").trim(),
+      last_name: String(lastName || last_name || "User").trim(),
+      mobile_num: cleanPhone || "08012345678",
+      email: userEmail,
+      bvn: cleanBvn,
+      dob: String(dob || "01/01/1990").trim(),
+      gender: genderCode,
+      address: String(address || "Maiduguri, Nigeria").trim(),
       beneficiary_account: process.env.SQUAD_BENEFICIARY_ACCOUNT || "0123456789"
     };
 
-    const squadRes = await axios.post(`${squadBaseUrl}/virtual-account`, payload, {
-      headers: { Authorization: `Bearer ${squadSecret}`, "Content-Type": "application/json" }
-    });
+    let response;
+    try {
+      response = await axios.post(squadBaseUrl + "/virtual-account/business", payload, {
+        headers: {
+          Authorization: "Bearer " + squadSecret,
+          "Content-Type": "application/json"
+        }
+      });
+    } catch (apiErr) {
+      if (apiErr.response?.status === 404) {
+        response = await axios.post(squadBaseUrl + "/virtual-account", payload, {
+          headers: {
+            Authorization: "Bearer " + squadSecret,
+            "Content-Type": "application/json"
+          }
+        });
+      } else {
+        throw apiErr;
+      }
+    }
 
-    if (squadRes.data?.status === 200 || squadRes.data?.success) {
-      const accData = squadRes.data.data;
-      const accNo = accData.virtual_account_number;
-      const bankName = accData.bank_name || "GTBANK / SQUAD";
-      const accName = accData.account_name || `DREAMHATCHER-${payload.first_name}`;
+    const squadData = response.data;
 
-      await supabase.from("users").update({
+    if (squadData.status === 200 || squadData.success) {
+      const va = squadData.data || squadData;
+      const accNo = va.virtual_account_number || va.account_number;
+      const bankName = va.bank_name || "GTBank / Squad";
+      const accName = va.account_name || (payload.first_name + " " + payload.last_name);
+
+      await supabase.from("profiles").update({
         virtual_account_number: accNo,
         virtual_bank_name: bankName,
-        virtual_account_name: accName,
-        squad_customer_id: String(userId)
-      }).eq("id", userId);
+        virtual_account_name: accName
+      }).eq("id", targetUserId);
 
-      return res.json({ success: true, account_number: accNo, bank_name: bankName, account_name: accName });
+      return res.status(200).json({
+        success: true,
+        account_number: accNo,
+        bank_name: bankName,
+        account_name: accName
+      });
     } else {
-      throw new Error(squadRes.data?.message || "Failed to create virtual account with Squad");
+      return res.status(400).json({
+        success: false,
+        message: squadData.message || "Squad API error",
+        details: squadData.data
+      });
     }
-  } catch (err) {
-    console.error("❌ Squad Account Creation Error:", err.response?.data || err.message);
-    res.status(500).json({ success: false, message: err.response?.data?.message || err.message });
+  } catch (error) {
+    const errorDetails = error.response?.data || error.message;
+    console.error("❌ Squad Integration Error:", JSON.stringify(errorDetails, null, 2));
+    return res.status(error.response?.status || 500).json({
+      success: false,
+      message: error.response?.data?.message || "Failed to create virtual account with Squad",
+      details: errorDetails
+    });
   }
 });
-// SQUAD AUTOMATED FUNDING WEBHOOK
-// SQUAD AUTOMATED FUNDING WEBHOOK
-// SQUAD AUTOMATED FUNDING WEBHOOK
+
 app.post("/api/v2/webhooks/squad", async (req, res) => {
   try {
     const payload = req.body;
@@ -286,13 +327,11 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
       return res.status(200).json({ success: true, message: "Invalid payload parameters" });
     }
 
-    // 1. Idempotency Check
     const { data: existingTx } = await supabase.from("transactions").select("id").eq("reference", txRef).single();
     if (existingTx) {
       return res.status(200).json({ success: true, message: "Transaction already processed" });
     }
 
-    // 2. Resolve User ID from profiles
     const cleanEmail = email.trim();
     const { data: profiles, error: profErr } = await supabase.from("profiles").select("id").ilike("email", cleanEmail);
     if (profErr || !profiles || profiles.length === 0) {
@@ -302,7 +341,6 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
 
     const targetUserId = profiles[0].id;
 
-    // 3. Update Wallets Table directly with user_id
     const { data: walletRow } = await supabase.from("wallets").select("id, balance").eq("user_id", targetUserId).single();
     const currentBalance = Number(walletRow?.balance || 0);
     const newBalance = currentBalance + amount;
@@ -315,10 +353,9 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
 
     if (updateErr || !updatedWallet || updatedWallet.length === 0) {
       console.error("❌ Wallet Update Error:", updateErr?.message || "0 rows updated");
-      return res.status(500).json({ success: false, message: "Failed to update wallet row: " + (updateErr?.message || "Check RLS or user_id") });
+      return res.status(500).json({ success: false, message: "Failed to update wallet row" });
     }
 
-    // 4. Log Transaction
     await supabase.from("transactions").insert({
       user_id: targetUserId,
       type: "deposit",
@@ -330,13 +367,34 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
       description: "Automated Virtual Account Topup via Squad"
     });
 
-    console.log(`✅ Wallet funded: ${cleanEmail} +₦${amount} (New Balance: ₦${newBalance})`);
+    console.log("✅ Wallet funded: " + cleanEmail + " +₦" + amount + " (New Balance: ₦" + newBalance + ")");
     return res.json({ success: true, message: "Wallet funded successfully", wallet_data: updatedWallet[0] });
   } catch (err) {
     console.error("❌ Squad Webhook Exception:", err.message);
     return res.status(500).json({ success: false, message: err.message });
   }
-});// DATA PLANS & PURCHASE
+});
+
+// -------------------------------------------------------------
+// 4. BIGISUB VTU & UTILITIES ENGINE
+// -------------------------------------------------------------
+app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
+  try {
+    const { network, phone_number, amount } = req.body;
+    const response = await bigiClient.post("/api/v2/vtu/airtime/purchase/", {
+      network: getNetworkId(network),
+      phone_number: String(phone_number).trim(),
+      amount: String(amount),
+      airtime_type: "vtu",
+      pin: DEFAULT_PIN
+    });
+    res.json(response.data);
+  } catch (err) {
+    console.error("❌ Airtime Error:", err.response?.data || err.message);
+    res.status(400).json({ success: false, message: err.response?.data?.message || err.message });
+  }
+});
+
 app.get("/api/v2/vtu/data/plans", async (req, res) => {
   try {
     const appNetId = Number(req.query.network) || 1;
@@ -370,46 +428,26 @@ app.get("/api/v2/vtu/data/plans", async (req, res) => {
 
 app.post("/api/v2/vtu/data/purchase", async (req, res) => {
   try {
-    const { network, plan, plan_id, phone_number, pin } = req.body;
-
-    // 1. Resolve plan identifier whether frontend sends 'plan' or 'plan_id'
+    const { network, plan, plan_id, phone_number } = req.body;
     const targetPlan = plan || plan_id;
     const numericPlanId = Number(targetPlan);
 
     if (!targetPlan || isNaN(numericPlanId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid or missing plan ID"
-      });
+      return res.status(400).json({ success: false, message: "Invalid or missing plan ID" });
     }
 
-    // 2. Format payload for BigiSub API
     const payload = {
-      customer_identifier: String(userId),
-      first_name: (firstName || "Dreamhatcher").trim(),
-      last_name: (lastName || "User").trim(),
-      mobile_num: phone ? String(phone).replace(/[^0-9]/g, "") : "08012345678",
-      email: String(email).toLowerCase().trim(),
-      bvn: bvn || "22222222222",
-      dob: dob || "01/01/1990",
-      gender: gender || "1",
-      address: address || "Lagos",
-      beneficiary_account: process.env.SQUAD_BENEFICIARY_ACCOUNT || "0123456789"
+      network: getNetworkId(network),
+      plan: numericPlanId,
+      phone_number: String(phone_number).trim(),
+      pin: DEFAULT_PIN
     };
 
-    // 3. Dispatch purchase request
     const response = await bigiClient.post("/api/v2/vtu/data/purchase/", payload);
-    return res.json({
-      success: true,
-      message: "Data purchase successful",
-      data: response.data
-    });
-
+    return res.json({ success: true, message: "Data purchase successful", data: response.data });
   } catch (err) {
-    // Detailed error logging to inspect BigiSub validation details in Render logs
     const bigiError = err.response?.data;
     console.error("❌ BigiSub API Error:", JSON.stringify(bigiError || err.message, null, 2));
-
     return res.status(err.response?.status || 400).json({
       success: false,
       message: bigiError?.message || bigiError?.detail || err.message,
@@ -418,11 +456,10 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
   }
 });
 
-// CABLE TV
 app.get("/api/v2/vtu/cable/plans", async (req, res) => {
   try {
     const cableName = getCableCode(req.query.cable_name || req.query.provider || "gotv");
-    const response = await bigiClient.get(`/api/v2/vtu/cable/plans/?cable_name=${cableName}`);
+    const response = await bigiClient.get("/api/v2/vtu/cable/plans/?cable_name=" + cableName);
     const plans = response.data?.data || (Array.isArray(response.data) ? response.data : []);
     res.json({ success: true, data: plans });
   } catch (err) {
@@ -456,9 +493,9 @@ app.post("/api/v2/vtu/cable/verify", async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(400).json({ 
-      success: false, 
-      message: err.response?.data?.message || err.response?.data?.detail || "Customer account not found" 
+    res.status(400).json({
+      success: false,
+      message: err.response?.data?.message || err.response?.data?.detail || "Customer account not found"
     });
   }
 });
@@ -480,11 +517,10 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
   }
 });
 
-// RECHARGE PINS
 app.get("/api/v2/vtu/recharge-pin/plans", async (req, res) => {
   try {
     const netId = getNetworkId(req.query.network);
-    const response = await bigiClient.get(`/api/v2/vtu/recharge-pin/plans/?network=${netId}`);
+    const response = await bigiClient.get("/api/v2/vtu/recharge-pin/plans/?network=" + netId);
     const plans = response.data?.data || (Array.isArray(response.data) ? response.data : []);
     res.json({ success: true, data: plans });
   } catch (err) {
@@ -492,7 +528,6 @@ app.get("/api/v2/vtu/recharge-pin/plans", async (req, res) => {
   }
 });
 
-// ELECTRICITY
 app.get("/api/v2/bills/electricity/providers", async (_req, res) => {
   try {
     const response = await bigiClient.get("/api/v2/bills/electricity/providers/");
@@ -526,7 +561,6 @@ app.post("/api/v2/bills/electricity/verify", async (req, res) => {
   }
 });
 
-// EDUCATION
 app.get("/api/v2/bills/result-checker/prices", async (_req, res) => {
   try {
     const response = await bigiClient.get("/api/v2/bills/result-checker/prices/");
@@ -538,7 +572,7 @@ app.get("/api/v2/bills/result-checker/prices", async (_req, res) => {
 });
 
 // -------------------------------------------------------------
-// 4. DUAL KEEP-WARM HEALTH ENDPOINT (RENDER & SUPABASE)
+// 5. DUAL KEEP-WARM HEALTH ENDPOINT
 // -------------------------------------------------------------
 app.get("/health", async (_req, res) => {
   try {
@@ -550,11 +584,9 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-// Dynamic keep-warm self-ping for Render deployment
 const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL;
-
 if (SELF_URL) {
-  const pingUrl = `${SELF_URL}/health`;
+  const pingUrl = SELF_URL + "/health";
   setInterval(() => {
     https.get(pingUrl, (response) => {
       response.resume();
@@ -565,4 +597,4 @@ if (SELF_URL) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Dreamhatcher Production Server active on port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => console.log("🚀 Dreamhatcher Production Server active on port " + PORT));
