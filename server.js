@@ -74,9 +74,10 @@ function requestUserId(req) {
 }
 
 async function getWallet(userId) {
+  // The wallets table is keyed by user_id and has no id column.
   const { data, error } = await supabase
     .from("wallets")
-    .select("id, balance")
+    .select("balance")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
@@ -426,7 +427,7 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
 
     const targetUserId = profiles[0].id;
 
-    const { data: walletRow } = await supabase.from("wallets").select("id, balance").eq("user_id", targetUserId).single();
+    const { data: walletRow } = await supabase.from("wallets").select("balance").eq("user_id", targetUserId).single();
     const currentBalance = Number(walletRow?.balance || 0);
     const newBalance = currentBalance + amount;
 
