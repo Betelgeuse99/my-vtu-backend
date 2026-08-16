@@ -126,16 +126,42 @@ async function debitWallet(userId, amount) {
 }
 
 // Bigisub can answer a purchase request with an HTTP error OR with an HTTP 200
-// carrying success:false (e.g. "Dear customer, you are not eligible for this
-// offer..."). Never treat either as a fulfilled order.
-function bigiFailed(data) {
-  return (
-    !data ||
-    data.success === false ||
-    !!data.error ||
-    data.status === "error" ||
-    data.status === "failed"
-  );
+// that still means failure. Failure indicators are inconsistent across
+// endpoints and can be nested inside `data` (e.g. the outer wrapper says
+// success but data.status is "failed"), so walk the whole response looking for
+// any failure signal. If nothing indicates failure, treat the order as placed.
+function bigiFailed(node, depth = 0) {
+  if (!node || depth > 3) return false;
+
+  if (typeof node === "string") {
+    return ["failed", "error", "failure", "fail", "declined", "cancelled"].includes(node.toLowerCase());
+  }
+  if (typeof node !== "object" || Array.isArray(node)) return false;
+
+  const isFailureValue = (v) => {
+    if (v === false) return true;
+    if (typeof v === "number") return v >= 400;
+    if (typeof v === "string") {
+      return ["false", "0", "no", "failed", "error", "failure", "fail", "declined", "cancelled"].includes(v.toLowerCase());
+    }
+    return false;
+  };
+
+  if ("success" in node && isFailureValue(node.success)) return true;
+  if ("status" in node && isFailureValue(node.status)) return true;
+  if ("error" in node && node.error) return true;
+  if ("code" in node && typeof node.code === "number" && node.code >= 400) return true;
+  if ("status_code" in node && typeof node.status_code === "number" && node.status_code >= 400) return true;
+  if ("statusCode" in node && typeof node.statusCode === "number" && node.statusCode >= 400) return true;
+
+  const nested = node.data;
+  if (nested && typeof nested === "object") {
+    if (Array.isArray(nested)) {
+      return nested.some((item) => bigiFailed(item, depth + 1));
+    }
+    return bigiFailed(nested, depth + 1);
+  }
+  return false;
 }
 
 function bigiErrorMessage(data, fallback) {
@@ -489,6 +515,7 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
       airtime_type: "vtu",
       pin: DEFAULT_PIN
     });
+    console.log("📦 AIRTIME raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
       return res.status(400).json({
@@ -582,6 +609,7 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
     };
 
     const response = await bigiClient.post("/api/v2/vtu/data/purchase/", payload);
+    console.log("📦 DATA raw response:", JSON.stringify(response.data));
 
     // Never report success unless Bigisub actually fulfilled the order.
     if (bigiFailed(response.data)) {
@@ -683,6 +711,7 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
       Customer: String(Customer || customerName).trim(),
       pin: DEFAULT_PIN
     });
+    console.log("📦 CABLE raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
       return res.status(400).json({
@@ -783,6 +812,7 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
       Customer_name: String(Customer_name || customerName || "").trim(),
       pin: DEFAULT_PIN
     });
+    console.log("📦 ELECTRICITY raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
       return res.status(400).json({
@@ -843,6 +873,7 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
       name_on_card: String(name_on_card || "").trim(),
       pin: DEFAULT_PIN
     });
+    console.log("📦 RECHARGE PIN raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
       return res.status(400).json({
@@ -895,6 +926,7 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
       quantity: qty,
       pin_code: String(pin_code || DEFAULT_PIN).trim()
     });
+    console.log("📦 EXAM PIN raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
       return res.status(400).json({
