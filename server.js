@@ -62,6 +62,91 @@ function formatSquadGender(g) {
 }
 
 // -------------------------------------------------------------
+// WALLET HELPERS (balance check + debit on successful purchase)
+// -------------------------------------------------------------
+
+/**
+ * Resolves the signed-in user for a purchase. Prefers the x-user-id header
+ * (sent by the Android app), falling back to a userId field in the body.
+ */
+function requestUserId(req) {
+  return req.get("x-user-id") || req.body.userId || req.body.user_id || null;
+}
+
+async function getWallet(userId) {
+  const { data, error } = await supabase
+    .from("wallets")
+    .select("id, balance")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Returns a user-facing error message when [userId]'s wallet cannot cover
+ * [amount], or null when the purchase may proceed. This MUST stay enforced
+ * server-side — the app-side check is only a UX nicety.
+ */
+async function walletShortfallMessage(userId, amount) {
+  const wallet = await getWallet(userId);
+  if (!wallet) return "Wallet not found. Please fund your wallet first.";
+  const balance = Number(wallet.balance || 0);
+  if (balance < amount) {
+    return (
+      "Insufficient wallet balance — you need ₦" + amount.toLocaleString() +
+      " but your balance is ₦" + balance.toLocaleString() +
+      ". Please fund your wallet first."
+    );
+  }
+  return null;
+}
+
+/**
+ * Debits [amount] from [userId]'s wallet AFTER Bigisub confirms the order was
+ * fulfilled. Returns the new balance, or null when the debit failed (the order
+ * still went through — log it loudly for manual reconciliation).
+ */
+async function debitWallet(userId, amount) {
+  const wallet = await getWallet(userId);
+  const balance = Number(wallet?.balance || 0);
+  const newBalance = balance - amount;
+  const { data, error } = await supabase
+    .from("wallets")
+    .update({ balance: newBalance })
+    .eq("user_id", userId)
+    .select()
+    .single();
+  if (error || !data) {
+    console.error("❌ Wallet debit error:", error?.message || "0 rows updated");
+    return null;
+  }
+  return Number(data.balance);
+}
+
+// Bigisub can answer a purchase request with an HTTP error OR with an HTTP 200
+// carrying success:false (e.g. "Dear customer, you are not eligible for this
+// offer..."). Never treat either as a fulfilled order.
+function bigiFailed(data) {
+  return (
+    !data ||
+    data.success === false ||
+    !!data.error ||
+    data.status === "error" ||
+    data.status === "failed"
+  );
+}
+
+function bigiErrorMessage(data, fallback) {
+  return (
+    data?.message ||
+    data?.detail ||
+    (typeof data?.error === "string" ? data.error : data?.error?.message) ||
+    fallback
+  );
+}
+
+// -------------------------------------------------------------
 // 2. AUTHENTICATION ROUTES (Native Brevo API)
 // -------------------------------------------------------------
 app.post("/auth/send-otp", async (req, res) => {
@@ -381,6 +466,21 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
 app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
   try {
     const { network, phone_number, amount } = req.body;
+    const userId = requestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    const price = Number(amount) || 0;
+    if (price <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid amount" });
+    }
+
+    const shortfall = await walletShortfallMessage(userId, price);
+    if (shortfall) {
+      return res.status(400).json({ success: false, message: shortfall });
+    }
+
     const response = await bigiClient.post("/api/v2/vtu/airtime/purchase/", {
       network: getNetworkId(network),
       phone_number: String(phone_number).trim(),
@@ -388,10 +488,23 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
       airtime_type: "vtu",
       pin: DEFAULT_PIN
     });
-    res.json(response.data);
+
+    if (bigiFailed(response.data)) {
+      return res.status(400).json({
+        success: false,
+        message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
+      });
+    }
+
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      console.error("🚨 AIRTIME FULFILLED WITHOUT DEBIT — userId=" + userId + " amount=" + price);
+    }
+    console.log("✅ Airtime: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    res.json({ success: true, message: "Airtime top-up successful", data: response.data, balance: newBalance });
   } catch (err) {
     console.error("❌ Airtime Error:", err.response?.data || err.message);
-    res.status(400).json({ success: false, message: err.response?.data?.message || err.message });
+    res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
   }
 });
 
@@ -429,11 +542,35 @@ app.get("/api/v2/vtu/data/plans", async (req, res) => {
 app.post("/api/v2/vtu/data/purchase", async (req, res) => {
   try {
     const { network, plan, plan_id, phone_number } = req.body;
+    const userId = requestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
     const targetPlan = plan || plan_id;
     const numericPlanId = Number(targetPlan);
-
     if (!targetPlan || isNaN(numericPlanId)) {
       return res.status(400).json({ success: false, message: "Invalid or missing plan ID" });
+    }
+
+    // Server-authoritative price: look the plan up in the synced catalog first,
+    // fall back to the client-sent amount only if the plan is unknown.
+    let price = Number(req.body.amount) || 0;
+    const { data: planRow } = await supabase
+      .from("data_plans")
+      .select("retail_price")
+      .eq("bigi_plan_id", numericPlanId)
+      .maybeSingle();
+    if (planRow && Number(planRow.retail_price) > 0) {
+      price = Number(planRow.retail_price);
+    }
+    if (price <= 0) {
+      return res.status(400).json({ success: false, message: "Could not determine plan price" });
+    }
+
+    const shortfall = await walletShortfallMessage(userId, price);
+    if (shortfall) {
+      return res.status(400).json({ success: false, message: shortfall });
     }
 
     const payload = {
@@ -444,13 +581,32 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
     };
 
     const response = await bigiClient.post("/api/v2/vtu/data/purchase/", payload);
-    return res.json({ success: true, message: "Data purchase successful", data: response.data });
+
+    // Never report success unless Bigisub actually fulfilled the order.
+    if (bigiFailed(response.data)) {
+      return res.status(400).json({
+        success: false,
+        message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
+      });
+    }
+
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      console.error("🚨 DATA PURCHASE FULFILLED WITHOUT DEBIT — userId=" + userId + " plan=" + numericPlanId + " amount=" + price);
+    }
+    console.log("✅ Data purchase: user " + userId + " plan " + numericPlanId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    return res.json({
+      success: true,
+      message: "Data purchase successful",
+      data: response.data,
+      balance: newBalance
+    });
   } catch (err) {
     const bigiError = err.response?.data;
     console.error("❌ BigiSub API Error:", JSON.stringify(bigiError || err.message, null, 2));
     return res.status(err.response?.status || 400).json({
       success: false,
-      message: bigiError?.message || bigiError?.detail || err.message,
+      message: bigiErrorMessage(bigiError, err.message),
       errors: bigiError?.errors || null
     });
   }
@@ -503,17 +659,45 @@ app.post("/api/v2/vtu/cable/verify", async (req, res) => {
 app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
   try {
     const { cable_type, provider, card_no, phone_number, amount, Customer, customerName } = req.body;
+    const userId = requestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    const price = Number(amount) || 0;
+    if (price <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid amount" });
+    }
+
+    const shortfall = await walletShortfallMessage(userId, price);
+    if (shortfall) {
+      return res.status(400).json({ success: false, message: shortfall });
+    }
+
     const response = await bigiClient.post("/api/v2/vtu/cable/purchase/", {
       cable_type: getCableCode(cable_type || provider),
       card_no: String(card_no).trim(),
       phone_number: String(phone_number).trim(),
-      amount: Number(amount),
+      amount: price,
       Customer: String(Customer || customerName).trim(),
       pin: DEFAULT_PIN
     });
-    res.json(response.data);
+
+    if (bigiFailed(response.data)) {
+      return res.status(400).json({
+        success: false,
+        message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
+      });
+    }
+
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      console.error("🚨 CABLE PURCHASE FULFILLED WITHOUT DEBIT — userId=" + userId + " amount=" + price);
+    }
+    console.log("✅ Cable: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    res.json({ success: true, message: "Cable subscription successful", data: response.data, balance: newBalance });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.response?.data?.message || err.message });
+    res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
   }
 });
 
@@ -568,6 +752,171 @@ app.get("/api/v2/bills/result-checker/prices", async (_req, res) => {
     res.json({ success: true, data: prices });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message, data: [] });
+  }
+});
+
+app.post("/api/v2/bills/electricity/pay", async (req, res) => {
+  try {
+    const { company, meter_no, meter_type, phone_number, amount, Customer_name, customerName } = req.body;
+    const userId = requestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    const price = Number(amount) || 0;
+    if (price <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid amount" });
+    }
+
+    const shortfall = await walletShortfallMessage(userId, price);
+    if (shortfall) {
+      return res.status(400).json({ success: false, message: shortfall });
+    }
+
+    const response = await bigiClient.post("/api/v2/bills/electricity/pay/", {
+      company: String(company).trim(),
+      meter_no: String(meter_no).trim(),
+      meter_type: String(meter_type || "prepaid").trim(),
+      phone_number: String(phone_number).trim(),
+      amount: price,
+      Customer_name: String(Customer_name || customerName || "").trim(),
+      pin: DEFAULT_PIN
+    });
+
+    if (bigiFailed(response.data)) {
+      return res.status(400).json({
+        success: false,
+        message: bigiErrorMessage(response.data, "Bigisub rejected this payment")
+      });
+    }
+
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      console.error("🚨 ELECTRICITY FULFILLED WITHOUT DEBIT — userId=" + userId + " amount=" + price);
+    }
+    console.log("✅ Electricity: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    // The Android app shows the recharge token on the receipt — surface Bigisub's
+    // token (whatever shape it arrives in) so the payment screen can display it.
+    const token = response.data?.data?.token || response.data?.token || null;
+    res.json({ success: true, message: "Electricity bill paid", data: response.data, token: token, balance: newBalance });
+  } catch (err) {
+    res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+  }
+});
+
+app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
+  try {
+    const { network, plan, quantity, card_name, name_on_card } = req.body;
+    const userId = requestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    const numericPlanId = Number(plan);
+    const qty = Number(quantity) || 1;
+    if (!plan || isNaN(numericPlanId)) {
+      return res.status(400).json({ success: false, message: "Invalid or missing plan ID" });
+    }
+
+    // Resolve the unit price from Bigisub's own plan catalog, then charge qty x price.
+    const netId = getNetworkId(network);
+    const plansRes = await bigiClient.get("/api/v2/vtu/recharge-pin/plans/?network=" + netId);
+    const plans = plansRes.data?.data || (Array.isArray(plansRes.data) ? plansRes.data : []);
+    const planInfo = plans.find(p => Number(p.id) === numericPlanId);
+    const unitPrice = Number(planInfo?.regular_price || planInfo?.corporate_price || 0);
+    const price = unitPrice * qty;
+    if (price <= 0) {
+      return res.status(400).json({ success: false, message: "Could not determine plan price" });
+    }
+
+    const shortfall = await walletShortfallMessage(userId, price);
+    if (shortfall) {
+      return res.status(400).json({ success: false, message: shortfall });
+    }
+
+    const response = await bigiClient.post("/api/v2/vtu/recharge-pin/purchase/", {
+      network: netId,
+      plan: numericPlanId,
+      quantity: qty,
+      card_name: String(card_name || "").trim(),
+      name_on_card: String(name_on_card || "").trim(),
+      pin: DEFAULT_PIN
+    });
+
+    if (bigiFailed(response.data)) {
+      return res.status(400).json({
+        success: false,
+        message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
+      });
+    }
+
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      console.error("🚨 RECHARGE PIN FULFILLED WITHOUT DEBIT — userId=" + userId + " amount=" + price);
+    }
+    console.log("✅ Recharge PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    res.json({ success: true, message: "Recharge PINs generated", data: response.data, balance: newBalance });
+  } catch (err) {
+    res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+  }
+});
+
+app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
+  try {
+    const { exam, quantity, pin_code } = req.body;
+    const userId = requestUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Authentication required" });
+    }
+
+    const qty = Number(quantity) || 1;
+    if (!exam) {
+      return res.status(400).json({ success: false, message: "Exam type is required" });
+    }
+
+    // Resolve the unit price from Bigisub's price list, then charge qty x price.
+    const pricesRes = await bigiClient.get("/api/v2/bills/result-checker/prices/");
+    const prices = pricesRes.data?.data?.prices || pricesRes.data?.data || [];
+    const examInfo = prices.find(p => String(p.code || p.exam || "").toLowerCase() === String(exam).toLowerCase());
+    const unitPrice = Number(examInfo?.amount || examInfo?.plan_amount || 0);
+    const price = unitPrice * qty;
+    if (price <= 0) {
+      return res.status(400).json({ success: false, message: "Could not determine exam price" });
+    }
+
+    const shortfall = await walletShortfallMessage(userId, price);
+    if (shortfall) {
+      return res.status(400).json({ success: false, message: shortfall });
+    }
+
+    const response = await bigiClient.post("/api/v2/bills/result-checker/purchase/", {
+      exam: String(exam).trim(),
+      quantity: qty,
+      pin_code: String(pin_code || DEFAULT_PIN).trim()
+    });
+
+    if (bigiFailed(response.data)) {
+      return res.status(400).json({
+        success: false,
+        message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
+      });
+    }
+
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      console.error("🚨 EXAM PIN FULFILLED WITHOUT DEBIT — userId=" + userId + " amount=" + price);
+    }
+    console.log("✅ Exam PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    // The Android app shows the purchased PINs in a dialog — extract them from
+    // whatever shape Bigisub returns (wrapped in data, or a bare array).
+    const rawData = response.data?.data;
+    const pins =
+      response.data?.pins ||
+      rawData?.pins ||
+      (Array.isArray(rawData) ? rawData : []);
+    res.json({ success: true, message: "Exam PINs generated", data: response.data, pins: pins, balance: newBalance });
+  } catch (err) {
+    res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
   }
 });
 
