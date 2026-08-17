@@ -32,7 +32,14 @@ app.use(cors());
 app.use(express.json());
 
 function getNetworkId(net) {
-  const map = { "1": 1, "mtn": 1, "2": 3, "glo": 3, "3": 2, "airtel": 2, "4": 4, "9mobile": 4, "eti": 4 };
+  // Bigisub network IDs, verified against the live API (2026-08-17):
+  //   1 = MTN, 2 = GLO, 3 = AIRTEL, 4 = 9MOBILE
+  // The app sends EITHER a slug ("mtn"/"glo"/"airtel"/"9mobile") for airtime &
+  // recharge-pins, OR the Android registry's numeric id for data. The Android
+  // registry numbers GLO=3 / AIRTEL=2 (swapped vs Bigisub), so the numeric keys
+  // below translate those app ids into Bigisub's ids. Slugs map straight to
+  // Bigisub ids. Keep both halves consistent with each other.
+  const map = { "1": 1, "mtn": 1, "2": 3, "glo": 2, "3": 2, "airtel": 3, "4": 4, "9mobile": 4, "eti": 4 };
   return map[String(net || "").toLowerCase().trim()] || 1;
 }
 
