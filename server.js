@@ -85,13 +85,37 @@ async function getWallet(userId) {
 }
 
 /**
+ * Ensures a wallet row exists for [userId], creating a zero-balance row when
+ * missing. Users who signed up before the on_auth_user_created trigger existed
+ * (or whose row was never created) had no row — which made the old debit's
+ * .single() throw "Cannot coerce the result to a single JSON object" and leave
+ * orders fulfilled but unpaid. Service role bypasses RLS. Returns the wallet.
+ */
+async function ensureWallet(userId) {
+  let wallet = await getWallet(userId);
+  if (wallet) return wallet;
+
+  const { data, error } = await supabase
+    .from("wallets")
+    .insert({ user_id: userId, balance: 0 })
+    .select("balance")
+    .maybeSingle();
+  if (error || !data) {
+    // Race: another request may have just created it — re-read before failing.
+    wallet = await getWallet(userId);
+    if (wallet) return wallet;
+    throw error || new Error("Could not create wallet for " + userId);
+  }
+  return data;
+}
+
+/**
  * Returns a user-facing error message when [userId]'s wallet cannot cover
  * [amount], or null when the purchase may proceed. This MUST stay enforced
  * server-side — the app-side check is only a UX nicety.
  */
 async function walletShortfallMessage(userId, amount) {
-  const wallet = await getWallet(userId);
-  if (!wallet) return "Wallet not found. Please fund your wallet first.";
+  const wallet = await ensureWallet(userId);
   const balance = Number(wallet.balance || 0);
   if (balance < amount) {
     return (
@@ -104,22 +128,43 @@ async function walletShortfallMessage(userId, amount) {
 }
 
 /**
- * Debits [amount] from [userId]'s wallet AFTER Bigisub confirms the order was
- * fulfilled. Returns the new balance, or null when the debit failed (the order
- * still went through — log it loudly for manual reconciliation).
+ * Debits [amount] from [userId]'s wallet. Called BEFORE the order is fulfilled
+ * so an order can never be delivered without charging the user. Returns the
+ * new balance, or null when the debit failed.
  */
 async function debitWallet(userId, amount) {
-  const wallet = await getWallet(userId);
+  const wallet = await ensureWallet(userId);
   const balance = Number(wallet?.balance || 0);
   const newBalance = balance - amount;
   const { data, error } = await supabase
     .from("wallets")
     .update({ balance: newBalance })
     .eq("user_id", userId)
-    .select()
-    .single();
+    .select("balance")
+    .maybeSingle();
   if (error || !data) {
     console.error("❌ Wallet debit error:", error?.message || "0 rows updated");
+    return null;
+  }
+  return Number(data.balance);
+}
+
+/**
+ * Refunds [amount] to [userId]'s wallet when an order was debited but Bigisub
+ * rejected it. Returns the new balance, or null when the credit failed.
+ */
+async function creditWallet(userId, amount) {
+  const wallet = await ensureWallet(userId);
+  const balance = Number(wallet?.balance || 0);
+  const newBalance = balance + amount;
+  const { data, error } = await supabase
+    .from("wallets")
+    .update({ balance: newBalance })
+    .eq("user_id", userId)
+    .select("balance")
+    .maybeSingle();
+  if (error || !data) {
+    console.error("❌ Wallet credit error:", error?.message || "0 rows updated");
     return null;
   }
   return Number(data.balance);
@@ -508,6 +553,13 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
       return res.status(400).json({ success: false, message: shortfall });
     }
 
+    // Debit FIRST so an order can never be delivered without charging the
+    // user. Refunded automatically if Bigisub rejects the order below.
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
+    }
+
     const response = await bigiClient.post("/api/v2/vtu/airtime/purchase/", {
       network: getNetworkId(network),
       phone_number: String(phone_number).trim(),
@@ -518,16 +570,15 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
     console.log("📦 AIRTIME raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
+      // Order was not fulfilled — refund the debit.
+      await creditWallet(userId, price);
       return res.status(400).json({
         success: false,
         message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
       });
     }
 
-    const newBalance = await debitWallet(userId, price);
-    if (newBalance === null) {
-      console.error("🚨 AIRTIME FULFILLED WITHOUT DEBIT — userId=" + userId + " amount=" + price);
-    }
+
     console.log("✅ Airtime: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     res.json({ success: true, message: "Airtime top-up successful", data: response.data, balance: newBalance });
   } catch (err) {
@@ -601,6 +652,13 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
       return res.status(400).json({ success: false, message: shortfall });
     }
 
+    // Debit FIRST so an order can never be delivered without charging the
+    // user. Refunded automatically if Bigisub rejects the order below.
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
+    }
+
     const payload = {
       network: getNetworkId(network),
       plan: numericPlanId,
@@ -613,16 +671,15 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
 
     // Never report success unless Bigisub actually fulfilled the order.
     if (bigiFailed(response.data)) {
+      // Order was not fulfilled — refund the debit.
+      await creditWallet(userId, price);
       return res.status(400).json({
         success: false,
         message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
       });
     }
 
-    const newBalance = await debitWallet(userId, price);
-    if (newBalance === null) {
-      console.error("🚨 DATA PURCHASE FULFILLED WITHOUT DEBIT — userId=" + userId + " plan=" + numericPlanId + " amount=" + price);
-    }
+
     console.log("✅ Data purchase: user " + userId + " plan " + numericPlanId + " -₦" + price + " (balance ₦" + newBalance + ")");
     return res.json({
       success: true,
@@ -703,6 +760,13 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
       return res.status(400).json({ success: false, message: shortfall });
     }
 
+    // Debit FIRST so an order can never be delivered without charging the
+    // user. Refunded automatically if Bigisub rejects the order below.
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
+    }
+
     const response = await bigiClient.post("/api/v2/vtu/cable/purchase/", {
       cable_type: getCableCode(cable_type || provider),
       card_no: String(card_no).trim(),
@@ -714,16 +778,15 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
     console.log("📦 CABLE raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
+      // Order was not fulfilled — refund the debit.
+      await creditWallet(userId, price);
       return res.status(400).json({
         success: false,
         message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
       });
     }
 
-    const newBalance = await debitWallet(userId, price);
-    if (newBalance === null) {
-      console.error("🚨 CABLE PURCHASE FULFILLED WITHOUT DEBIT — userId=" + userId + " amount=" + price);
-    }
+
     console.log("✅ Cable: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     res.json({ success: true, message: "Cable subscription successful", data: response.data, balance: newBalance });
   } catch (err) {
@@ -803,6 +866,13 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
       return res.status(400).json({ success: false, message: shortfall });
     }
 
+    // Debit FIRST so an order can never be delivered without charging the
+    // user. Refunded automatically if Bigisub rejects the order below.
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
+    }
+
     const response = await bigiClient.post("/api/v2/bills/electricity/pay/", {
       company: String(company).trim(),
       meter_no: String(meter_no).trim(),
@@ -815,16 +885,15 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
     console.log("📦 ELECTRICITY raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
+      // Order was not fulfilled — refund the debit.
+      await creditWallet(userId, price);
       return res.status(400).json({
         success: false,
         message: bigiErrorMessage(response.data, "Bigisub rejected this payment")
       });
     }
 
-    const newBalance = await debitWallet(userId, price);
-    if (newBalance === null) {
-      console.error("🚨 ELECTRICITY FULFILLED WITHOUT DEBIT — userId=" + userId + " amount=" + price);
-    }
+
     console.log("✅ Electricity: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     // The Android app shows the recharge token on the receipt — surface Bigisub's
     // token (whatever shape it arrives in) so the payment screen can display it.
@@ -865,6 +934,13 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
       return res.status(400).json({ success: false, message: shortfall });
     }
 
+    // Debit FIRST so an order can never be delivered without charging the
+    // user. Refunded automatically if Bigisub rejects the order below.
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
+    }
+
     const response = await bigiClient.post("/api/v2/vtu/recharge-pin/purchase/", {
       network: netId,
       plan: numericPlanId,
@@ -876,16 +952,15 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
     console.log("📦 RECHARGE PIN raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
+      // Order was not fulfilled — refund the debit.
+      await creditWallet(userId, price);
       return res.status(400).json({
         success: false,
         message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
       });
     }
 
-    const newBalance = await debitWallet(userId, price);
-    if (newBalance === null) {
-      console.error("🚨 RECHARGE PIN FULFILLED WITHOUT DEBIT — userId=" + userId + " amount=" + price);
-    }
+
     console.log("✅ Recharge PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     res.json({ success: true, message: "Recharge PINs generated", data: response.data, balance: newBalance });
   } catch (err) {
@@ -921,6 +996,13 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
       return res.status(400).json({ success: false, message: shortfall });
     }
 
+    // Debit FIRST so an order can never be delivered without charging the
+    // user. Refunded automatically if Bigisub rejects the order below.
+    const newBalance = await debitWallet(userId, price);
+    if (newBalance === null) {
+      return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
+    }
+
     const response = await bigiClient.post("/api/v2/bills/result-checker/purchase/", {
       exam: String(exam).trim(),
       quantity: qty,
@@ -929,16 +1011,15 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
     console.log("📦 EXAM PIN raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
+      // Order was not fulfilled — refund the debit.
+      await creditWallet(userId, price);
       return res.status(400).json({
         success: false,
         message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
       });
     }
 
-    const newBalance = await debitWallet(userId, price);
-    if (newBalance === null) {
-      console.error("🚨 EXAM PIN FULFILLED WITHOUT DEBIT — userId=" + userId + " amount=" + price);
-    }
+
     console.log("✅ Exam PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     // The Android app shows the purchased PINs in a dialog — extract them from
     // whatever shape Bigisub returns (wrapped in data, or a bare array).
