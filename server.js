@@ -583,13 +583,6 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid amount" });
     }
 
-    // Bigisub's live API rejects airtime below ₦50 ("BELOW MINIMUM AMOUNT
-    // ALLOWED"). Enforce it BEFORE debiting so the user gets a clean error
-    // instead of a debit + refund cycle.
-    const MIN_AIRTIME = 50;
-    if (price < MIN_AIRTIME) {
-      return res.status(400).json({ success: false, message: "Minimum airtime top-up is ₦" + MIN_AIRTIME + ". Please enter a higher amount." });
-    }
 
     const shortfall = await walletShortfallMessage(userId, price);
     if (shortfall) {
