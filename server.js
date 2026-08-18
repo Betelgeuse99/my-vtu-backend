@@ -602,6 +602,9 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
+    // Stash the debit on the request so the catch block (which cannot see
+    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    req._debit = { userId: userId, price: price };
 
     const response = await bigiClient.post("/api/v2/vtu/airtime/purchase/", {
       network: getNetworkId(network),
@@ -626,12 +629,17 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
     res.json({ success: true, message: "Airtime top-up successful", data: response.data, balance: newBalance });
   } catch (err) {
     console.error("❌ Airtime Error:", err.response?.data || err.message);
+    // try-block consts are invisible to catch, so the debit context comes
+    // from the request (stashed right after the debit succeeded).
+    const ctx = req._debit || null;
     const bigiStatus = err.response?.status || 0;
     if (bigiStatus >= 400 && bigiStatus < 500) {
       // Bigisub rejected the request outright (bad amount, bad phone, auth…)
       // — the order was NOT placed. Refund the debit so the user is never
       // charged for an order that didn't happen.
-      await creditWallet(userId, price);
+      if (ctx) {
+        await creditWallet(ctx.userId, ctx.price);
+      }
       console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
       return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
     }
@@ -718,6 +726,9 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
+    // Stash the debit on the request so the catch block (which cannot see
+    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    req._debit = { userId: userId, price: price };
 
     const payload = {
       network: getNetworkId(network),
@@ -749,10 +760,13 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
     });
   } catch (err) {
     const bigiError = err.response?.data;
+    const ctx = req._debit || null;
     const bigiStatus = err.response?.status || 0;
     if (bigiStatus >= 400 && bigiStatus < 500) {
       // Request was NOT placed — refund the debit.
-      await creditWallet(userId, price);
+      if (ctx) {
+        await creditWallet(ctx.userId, ctx.price);
+      }
       console.error("❌ Data rejected by Bigisub:", JSON.stringify(bigiError || err.message, null, 2));
       return res.status(bigiStatus).json({
         success: false,
@@ -837,6 +851,9 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
+    // Stash the debit on the request so the catch block (which cannot see
+    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    req._debit = { userId: userId, price: price };
 
     const response = await bigiClient.post("/api/v2/vtu/cable/purchase/", {
       cable_type: getCableCode(cable_type || provider),
@@ -861,12 +878,17 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
     console.log("✅ Cable: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     res.json({ success: true, message: "Cable subscription successful", data: response.data, balance: newBalance });
   } catch (err) {
+    // try-block consts are invisible to catch, so the debit context comes
+    // from the request (stashed right after the debit succeeded).
+    const ctx = req._debit || null;
     const bigiStatus = err.response?.status || 0;
     if (bigiStatus >= 400 && bigiStatus < 500) {
       // Bigisub rejected the request outright (bad amount, bad phone, auth…)
       // — the order was NOT placed. Refund the debit so the user is never
       // charged for an order that didn't happen.
-      await creditWallet(userId, price);
+      if (ctx) {
+        await creditWallet(ctx.userId, ctx.price);
+      }
       console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
       return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
     }
@@ -960,6 +982,9 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
+    // Stash the debit on the request so the catch block (which cannot see
+    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    req._debit = { userId: userId, price: price };
 
     const response = await bigiClient.post("/api/v2/bills/electricity/pay/", {
       company: String(company).trim(),
@@ -988,12 +1013,17 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
     const token = response.data?.data?.token || response.data?.token || null;
     res.json({ success: true, message: "Electricity bill paid", data: response.data, token: token, balance: newBalance });
   } catch (err) {
+    // try-block consts are invisible to catch, so the debit context comes
+    // from the request (stashed right after the debit succeeded).
+    const ctx = req._debit || null;
     const bigiStatus = err.response?.status || 0;
     if (bigiStatus >= 400 && bigiStatus < 500) {
       // Bigisub rejected the request outright (bad amount, bad phone, auth…)
       // — the order was NOT placed. Refund the debit so the user is never
       // charged for an order that didn't happen.
-      await creditWallet(userId, price);
+      if (ctx) {
+        await creditWallet(ctx.userId, ctx.price);
+      }
       console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
       return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
     }
@@ -1045,6 +1075,9 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
+    // Stash the debit on the request so the catch block (which cannot see
+    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    req._debit = { userId: userId, price: price };
 
     const response = await bigiClient.post("/api/v2/vtu/recharge-pin/purchase/", {
       network: netId,
@@ -1069,12 +1102,17 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
     console.log("✅ Recharge PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     res.json({ success: true, message: "Recharge PINs generated", data: response.data, balance: newBalance });
   } catch (err) {
+    // try-block consts are invisible to catch, so the debit context comes
+    // from the request (stashed right after the debit succeeded).
+    const ctx = req._debit || null;
     const bigiStatus = err.response?.status || 0;
     if (bigiStatus >= 400 && bigiStatus < 500) {
       // Bigisub rejected the request outright (bad amount, bad phone, auth…)
       // — the order was NOT placed. Refund the debit so the user is never
       // charged for an order that didn't happen.
-      await creditWallet(userId, price);
+      if (ctx) {
+        await creditWallet(ctx.userId, ctx.price);
+      }
       console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
       return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
     }
@@ -1124,6 +1162,9 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
+    // Stash the debit on the request so the catch block (which cannot see
+    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    req._debit = { userId: userId, price: price };
 
     const response = await bigiClient.post("/api/v2/bills/result-checker/purchase/", {
       exam: String(exam).trim(),
@@ -1152,12 +1193,17 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
       (Array.isArray(rawData) ? rawData : []);
     res.json({ success: true, message: "Exam PINs generated", data: response.data, pins: pins, balance: newBalance });
   } catch (err) {
+    // try-block consts are invisible to catch, so the debit context comes
+    // from the request (stashed right after the debit succeeded).
+    const ctx = req._debit || null;
     const bigiStatus = err.response?.status || 0;
     if (bigiStatus >= 400 && bigiStatus < 500) {
       // Bigisub rejected the request outright (bad amount, bad phone, auth…)
       // — the order was NOT placed. Refund the debit so the user is never
       // charged for an order that didn't happen.
-      await creditWallet(userId, price);
+      if (ctx) {
+        await creditWallet(ctx.userId, ctx.price);
+      }
       console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
       return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
     }
