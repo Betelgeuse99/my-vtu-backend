@@ -583,6 +583,14 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid amount" });
     }
 
+    // Bigisub's live API rejects airtime below ₦50 ("BELOW MINIMUM AMOUNT
+    // ALLOWED"). Enforce it BEFORE debiting so the user gets a clean error
+    // instead of a debit + refund cycle.
+    const MIN_AIRTIME = 50;
+    if (price < MIN_AIRTIME) {
+      return res.status(400).json({ success: false, message: "Minimum airtime top-up is ₦" + MIN_AIRTIME + ". Please enter a higher amount." });
+    }
+
     const shortfall = await walletShortfallMessage(userId, price);
     if (shortfall) {
       return res.status(400).json({ success: false, message: shortfall });
@@ -618,7 +626,24 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
     res.json({ success: true, message: "Airtime top-up successful", data: response.data, balance: newBalance });
   } catch (err) {
     console.error("❌ Airtime Error:", err.response?.data || err.message);
-    res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+    const bigiStatus = err.response?.status || 0;
+    if (bigiStatus >= 400 && bigiStatus < 500) {
+      // Bigisub rejected the request outright (bad amount, bad phone, auth…)
+      // — the order was NOT placed. Refund the debit so the user is never
+      // charged for an order that didn't happen.
+      await creditWallet(userId, price);
+      console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
+      return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+    }
+    // 5xx / timeout / connection error: Bigisub may STILL have processed the
+    // order (it has delivered airtime while returning "An error occurred…").
+    // We already debited, so keep the charge and let the user verify delivery
+    // — refunding blindly would hand out free airtime.
+    console.error("⚠️ Order outcome uncertain:", err.response?.data || err.message);
+    return res.json({
+      success: true,
+      message: "Request submitted — delivery may take a few minutes. If you don't receive it, contact support for a refund."
+    });
   }
 });
 
@@ -724,11 +749,22 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
     });
   } catch (err) {
     const bigiError = err.response?.data;
-    console.error("❌ BigiSub API Error:", JSON.stringify(bigiError || err.message, null, 2));
-    return res.status(err.response?.status || 400).json({
-      success: false,
-      message: bigiErrorMessage(bigiError, err.message),
-      errors: bigiError?.errors || null
+    const bigiStatus = err.response?.status || 0;
+    if (bigiStatus >= 400 && bigiStatus < 500) {
+      // Request was NOT placed — refund the debit.
+      await creditWallet(userId, price);
+      console.error("❌ Data rejected by Bigisub:", JSON.stringify(bigiError || err.message, null, 2));
+      return res.status(bigiStatus).json({
+        success: false,
+        message: bigiErrorMessage(bigiError, err.message),
+        errors: bigiError?.errors || null
+      });
+    }
+    // 5xx / timeout / connection error — order may still have been processed.
+    console.error("⚠️ Data outcome uncertain:", JSON.stringify(bigiError || err.message, null, 2));
+    return res.json({
+      success: true,
+      message: "Data request submitted — delivery may take a few minutes. If you don't receive it, contact support for a refund."
     });
   }
 });
@@ -825,7 +861,24 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
     console.log("✅ Cable: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     res.json({ success: true, message: "Cable subscription successful", data: response.data, balance: newBalance });
   } catch (err) {
-    res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+    const bigiStatus = err.response?.status || 0;
+    if (bigiStatus >= 400 && bigiStatus < 500) {
+      // Bigisub rejected the request outright (bad amount, bad phone, auth…)
+      // — the order was NOT placed. Refund the debit so the user is never
+      // charged for an order that didn't happen.
+      await creditWallet(userId, price);
+      console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
+      return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+    }
+    // 5xx / timeout / connection error: Bigisub may STILL have processed the
+    // order (it has delivered airtime while returning "An error occurred…").
+    // We already debited, so keep the charge and let the user verify delivery
+    // — refunding blindly would hand out free airtime.
+    console.error("⚠️ Order outcome uncertain:", err.response?.data || err.message);
+    return res.json({
+      success: true,
+      message: "Request submitted — delivery may take a few minutes. If you don't receive it, contact support for a refund."
+    });
   }
 });
 
@@ -935,7 +988,24 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
     const token = response.data?.data?.token || response.data?.token || null;
     res.json({ success: true, message: "Electricity bill paid", data: response.data, token: token, balance: newBalance });
   } catch (err) {
-    res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+    const bigiStatus = err.response?.status || 0;
+    if (bigiStatus >= 400 && bigiStatus < 500) {
+      // Bigisub rejected the request outright (bad amount, bad phone, auth…)
+      // — the order was NOT placed. Refund the debit so the user is never
+      // charged for an order that didn't happen.
+      await creditWallet(userId, price);
+      console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
+      return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+    }
+    // 5xx / timeout / connection error: Bigisub may STILL have processed the
+    // order (it has delivered airtime while returning "An error occurred…").
+    // We already debited, so keep the charge and let the user verify delivery
+    // — refunding blindly would hand out free airtime.
+    console.error("⚠️ Order outcome uncertain:", err.response?.data || err.message);
+    return res.json({
+      success: true,
+      message: "Request submitted — delivery may take a few minutes. If you don't receive it, contact support for a refund."
+    });
   }
 });
 
@@ -999,7 +1069,24 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
     console.log("✅ Recharge PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     res.json({ success: true, message: "Recharge PINs generated", data: response.data, balance: newBalance });
   } catch (err) {
-    res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+    const bigiStatus = err.response?.status || 0;
+    if (bigiStatus >= 400 && bigiStatus < 500) {
+      // Bigisub rejected the request outright (bad amount, bad phone, auth…)
+      // — the order was NOT placed. Refund the debit so the user is never
+      // charged for an order that didn't happen.
+      await creditWallet(userId, price);
+      console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
+      return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+    }
+    // 5xx / timeout / connection error: Bigisub may STILL have processed the
+    // order (it has delivered airtime while returning "An error occurred…").
+    // We already debited, so keep the charge and let the user verify delivery
+    // — refunding blindly would hand out free airtime.
+    console.error("⚠️ Order outcome uncertain:", err.response?.data || err.message);
+    return res.json({
+      success: true,
+      message: "Request submitted — delivery may take a few minutes. If you don't receive it, contact support for a refund."
+    });
   }
 });
 
@@ -1065,7 +1152,24 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
       (Array.isArray(rawData) ? rawData : []);
     res.json({ success: true, message: "Exam PINs generated", data: response.data, pins: pins, balance: newBalance });
   } catch (err) {
-    res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+    const bigiStatus = err.response?.status || 0;
+    if (bigiStatus >= 400 && bigiStatus < 500) {
+      // Bigisub rejected the request outright (bad amount, bad phone, auth…)
+      // — the order was NOT placed. Refund the debit so the user is never
+      // charged for an order that didn't happen.
+      await creditWallet(userId, price);
+      console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
+      return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
+    }
+    // 5xx / timeout / connection error: Bigisub may STILL have processed the
+    // order (it has delivered airtime while returning "An error occurred…").
+    // We already debited, so keep the charge and let the user verify delivery
+    // — refunding blindly would hand out free airtime.
+    console.error("⚠️ Order outcome uncertain:", err.response?.data || err.message);
+    return res.json({
+      success: true,
+      message: "Request submitted — delivery may take a few minutes. If you don't receive it, contact support for a refund."
+    });
   }
 });
 
