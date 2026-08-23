@@ -32,6 +32,7 @@ const DEFAULT_PIN = process.env.BIGISUB_PIN || "1234";
 
 const bigiClient = axios.create({
   baseURL: BIGISUB_BASE_URL,
+  timeout: 25000,
   headers: {
     Authorization: "Token " + BIGISUB_TOKEN,
     "Content-Type": "application/json"
@@ -1543,11 +1544,22 @@ async function requireAdmin(req, res, next) {
 // GET /api/v2/admin/stats — dashboard summary with dual-provider balances + routes
 app.get("/api/v2/admin/stats", requireAdmin, async (_req, res) => {
   try {
-    // Fetch both provider balances in parallel
+    // Fetch both provider balances in parallel — a provider failing must
+    // never take down the whole dashboard.
     let bigisubBalance = 0;
     let alrahuzBalance = 0;
     const [bigiResult, alrahuzResult] = await Promise.allSettled([
-      bigiClient.get("/api/v2/balance/").then(r => Number(r.data?.balance || r.data?.data?.balance || 0)),
+      (async () => {
+        // Bigisub has used two routes over time; try both known shapes.
+        try {
+          const r = await bigiClient.get("/api/v2/balance/");
+          return Number(r.data?.balance ?? r.data?.data?.balance ?? 0);
+        } catch {
+          const r = await bigiClient.get("/api/balance/");
+          const raw = r.data?.balance ?? r.data?.data?.balance ?? (typeof r.data === "number" ? r.data : 0);
+          return Number(raw) || 0;
+        }
+      })(),
       (async () => {
         try {
           const alr = require("./services/alrahuz");
@@ -1580,14 +1592,16 @@ app.get("/api/v2/admin/stats", requireAdmin, async (_req, res) => {
     res.json({
       success: true,
       data: {
+        // RAW NUMBERS — the dashboard formats them. Pre-formatted strings
+        // like "1,234.00" become NaN when the UI runs Number() on them.
         balances: {
-          bigisub: bigisubBalance.toLocaleString("en-NG", { minimumFractionDigits: 2 }),
-          alrahuz: alrahuzBalance.toLocaleString("en-NG", { minimumFractionDigits: 2 })
+          bigisub: Number(bigisubBalance.toFixed(2)),
+          alrahuz: Number(alrahuzBalance.toFixed(2))
         },
         active_routes: activeRoutes,
         total_registered_users: totalUsers,
         total_transactions: totalTransactions,
-        total_wallet_liability: totalLiability
+        total_wallet_liability: Number(totalLiability.toFixed(2))
       }
     });
   } catch (err) {
