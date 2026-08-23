@@ -1915,7 +1915,24 @@ app.post("/api/v2/admin/plans/update-price", requireAdmin, async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 6. DUAL KEEP-WARM HEALTH ENDPOINT
+// 6. ADMIN DASHBOARD STATIC HOSTING (/admin)
+// Serves the built Vite app (admin-dashboard/dist) from this same
+// service, so the dashboard is live at /admin on Render with no
+// separate hosting. API routes above take precedence.
+// -------------------------------------------------------------
+const path = require("path");
+const adminDist = path.join(__dirname, "admin-dashboard", "dist");
+if (require("fs").existsSync(adminDist)) {
+  app.use("/admin", express.static(adminDist, { index: "index.html" }));
+  // SPA fallback: client-side routes like /admin/plans render index.html
+  app.get("/admin/*", (_req, res) => {
+    res.sendFile(path.join(adminDist, "index.html"));
+  });
+  console.log("🖥️ Admin dashboard served at /admin");
+}
+
+// -------------------------------------------------------------
+// 7. DUAL KEEP-WARM HEALTH ENDPOINT
 // -------------------------------------------------------------
 app.get("/health", async (_req, res) => {
   try {
