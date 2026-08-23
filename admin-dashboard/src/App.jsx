@@ -40,7 +40,7 @@ function PublicOnly({ children }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/admin">
       <AuthProvider>
         <ToastProvider>
           <Routes>
@@ -64,3 +64,4 @@ export default function App() {
     </BrowserRouter>
   )
 }
+
