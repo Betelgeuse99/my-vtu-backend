@@ -804,6 +804,7 @@ app.get("/api/v2/vtu/data/plans", async (req, res) => {
       .map(p => {
         const activeId = planProviderId(p, provider);
         if (!activeId) return null;
+        const effPrice = effectiveRetailPrice(p, provider);
         return {
           row_id: p.id,
           id: Number(activeId),
@@ -814,11 +815,17 @@ app.get("/api/v2/vtu/data/plans", async (req, res) => {
           plantype: p.plan_type,
           size: p.volume,
           validity: p.validity,
-          amount: effectiveRetailPrice(p, provider),
-          plan_amount: effectiveRetailPrice(p, provider),
+          // effective selling price for the ACTIVE provider
+          amount: effPrice,
+          plan_amount: effPrice,
+          // keep the raw fields the admin dashboard reads
+          retail_price: effPrice,
           buy_price: provider === "alrahuz"
             ? (Number(p.alrahuz_buy_price) || p.buy_price)
             : p.buy_price,
+          bigi_buy_price: p.buy_price,
+          alrahuz_buy_price: p.alrahuz_buy_price,
+          alrahuz_retail_price: p.alrahuz_retail_price,
           provider,
         };
       })
@@ -1550,14 +1557,20 @@ app.get("/api/v2/admin/stats", requireAdmin, async (_req, res) => {
     let alrahuzBalance = 0;
     const [bigiResult, alrahuzResult] = await Promise.allSettled([
       (async () => {
-        // Bigisub has used two routes over time; try both known shapes.
+        // Correct route per Bigisub docs: /api/v2/financial/wallet/balance/
+        // (older builds used /api/v2/balance/ — kept as fallbacks)
         try {
-          const r = await bigiClient.get("/api/v2/balance/");
-          return Number(r.data?.balance ?? r.data?.data?.balance ?? 0);
+          const r = await bigiClient.get("/api/v2/financial/wallet/balance/");
+          return Number(r.data?.data?.balance ?? r.data?.balance ?? 0);
         } catch {
-          const r = await bigiClient.get("/api/balance/");
-          const raw = r.data?.balance ?? r.data?.data?.balance ?? (typeof r.data === "number" ? r.data : 0);
-          return Number(raw) || 0;
+          try {
+            const r = await bigiClient.get("/api/v2/balance/");
+            return Number(r.data?.balance ?? r.data?.data?.balance ?? 0);
+          } catch {
+            const r = await bigiClient.get("/api/balance/");
+            const raw = r.data?.balance ?? r.data?.data?.balance ?? (typeof r.data === "number" ? r.data : 0);
+            return Number(raw) || 0;
+          }
         }
       })(),
       (async () => {
