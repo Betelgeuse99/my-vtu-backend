@@ -50,19 +50,22 @@ function ProviderBadge({ provider }) {
 export default function Dashboard() {
   const [stats, setStats] = useState(null)
   const [providers, setProviders] = useState(null)
+  const [recent, setRecent] = useState([])
   const [loading, setLoading] = useState(true)
   const toast = useToast()
 
   const fetchStats = async () => {
     setLoading(true)
     try {
-      const [statsRes, providersRes] = await Promise.allSettled([
+      const [statsRes, providersRes, txRes] = await Promise.allSettled([
         api.getStats(),
         api.getProviders(),
+        api.getTransactions(1, 8),
       ])
       if (statsRes.status === 'fulfilled') setStats(statsRes.value.data)
       else toast.error(statsRes.reason?.message || 'Failed to load stats')
       if (providersRes.status === 'fulfilled') setProviders(providersRes.value.data)
+      if (txRes.status === 'fulfilled') setRecent(txRes.value.data || [])
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -73,6 +76,14 @@ export default function Dashboard() {
   useEffect(() => { fetchStats() }, [])
 
   const fmt = (n) => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })
+
+  const statusBadge = (status) => {
+    const s = (status || '').toLowerCase()
+    if (s === 'successful') return <span className="badge-success">Successful</span>
+    if (s === 'failed') return <span className="badge-failed">Failed</span>
+    if (s === 'refunded') return <span className="badge-refunded">Refunded</span>
+    return <span className="badge-pending">{status || '—'}</span>
+  }
 
   return (
     <div className="space-y-6">
@@ -159,6 +170,60 @@ export default function Dashboard() {
                 {Number(stats.total_transactions || 0).toLocaleString()}
               </span>
             </p>
+          </div>
+
+          {/* Recent Transactions */}
+          <div className="card overflow-hidden !p-0">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+              <div>
+                <h2 className="text-base font-semibold text-gray-100">Recent Transactions</h2>
+                <p className="text-xs text-gray-500 mt-0.5">Latest activity across the platform</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase tracking-wider">
+                    <th className="px-5 py-3">Service</th>
+                    <th className="px-5 py-3">User</th>
+                    <th className="px-5 py-3 text-right">Amount</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Provider</th>
+                    <th className="px-5 py-3">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recent.length === 0 ? (
+                    <tr><td colSpan={6} className="px-5 py-8 text-center text-gray-500 text-sm">No transactions yet</td></tr>
+                  ) : (
+                    recent.map(tx => (
+                      <tr key={tx.id} className="table-row">
+                        <td className="px-5 py-3">
+                          <p className="font-medium text-gray-200 capitalize">{tx.service_type || '—'}</p>
+                          <p className="text-xs text-gray-500 truncate max-w-[180px]">{tx.title}</p>
+                        </td>
+                        <td className="px-5 py-3">
+                          <p className="text-gray-300 text-xs">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
+                          <p className="text-xs text-gray-600 truncate max-w-[140px]">{tx.profiles?.email}</p>
+                        </td>
+                        <td className="px-5 py-3 text-right font-mono text-gray-200">
+                          ₦{Number(tx.amount || 0).toLocaleString()}
+                        </td>
+                        <td className="px-5 py-3">{statusBadge(tx.status)}</td>
+                        <td className="px-5 py-3">
+                          {tx.provider
+                            ? <span className={`text-xs font-medium ${tx.provider === 'alrahuz' ? 'text-purple-400' : 'text-brand-400'}`}>{tx.provider}</span>
+                            : <span className="text-xs text-gray-600">—</span>}
+                        </td>
+                        <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
+                          {tx.created_at ? new Date(tx.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       ) : null}
