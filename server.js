@@ -9,6 +9,17 @@ const https = require("https");
 const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
 
+// Crash forensics: without these an unhandled rejection kills the server
+// silently and there is no trace of why. Logged loudly instead.
+process.on("uncaughtException", (err) => {
+  console.error("💥 UNCAUGHT EXCEPTION:", err.stack || err.message);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("💥 UNHANDLED REJECTION:", reason instanceof Error ? reason.stack : reason);
+});
+
+const alrahuzService = require("./services/alrahuz");
+
 // 1. INITIALIZATION & CLIENTS
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -67,6 +78,106 @@ function formatSquadGender(g) {
   const clean = String(g || "").toLowerCase().trim();
   if (clean === "female" || clean === "f" || clean === "2") return "2";
   return "1";
+}
+
+// -------------------------------------------------------------
+// PROVIDER ROUTING HELPERS (bigisub | alrahuz per service)
+// -------------------------------------------------------------
+
+/** Active provider for [service] from provider_routing (default bigisub). */
+async function getActiveProvider(service) {
+  try {
+    const { data } = await supabase
+      .from("provider_routing")
+      .select("provider")
+      .eq("service", service)
+      .maybeSingle();
+    return data?.provider === "alrahuz" ? "alrahuz" : "bigisub";
+  } catch {
+    return "bigisub";
+  }
+}
+
+/**
+ * Selling price for [planRow] on [provider]. alrahuz_retail_price is an
+ * optional per-provider override; the shared retail_price is the default.
+ */
+function effectiveRetailPrice(planRow, provider) {
+  if (provider === "alrahuz") {
+    const override = Number(planRow.alrahuz_retail_price);
+    if (override > 0) return override;
+  }
+  return Number(planRow.retail_price || 0);
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Resolves a plan reference from the app/admin to a data_plans row.
+ * Accepts the row uuid, a Bigisub numeric id, or an Alrahuz numeric id —
+ * whichever provider is routed, the id the caller holds still resolves.
+ */
+async function findPlanRow(planRef) {
+  const ref = String(planRef).trim();
+  if (UUID_RE.test(ref)) {
+    const { data } = await supabase.from("data_plans").select("*").eq("id", ref).maybeSingle();
+    if (data) return data;
+  }
+  const { data: byAlrahuz } = await supabase
+    .from("data_plans")
+    .select("*")
+    .eq("alrahuz_plan_id", ref)
+    .maybeSingle();
+  if (byAlrahuz) return byAlrahuz;
+  const { data: byBigi } = await supabase
+    .from("data_plans")
+    .select("*")
+    .eq("bigi_plan_id", ref)
+    .maybeSingle();
+  return byBigi || null;
+}
+
+/**
+ * The provider-specific plan id for [planRow], or null when the plan cannot
+ * be fulfilled on that provider. Bigisub ids are pure numerics; the
+ * "ALR-xxx" placeholders used for Alrahuz-exclusive plans are not real
+ * Bigisub ids and must never be sent to their API.
+ */
+function planProviderId(planRow, provider) {
+  if (!planRow) return null;
+  if (provider === "alrahuz") {
+    return planRow.alrahuz_plan_id ? String(planRow.alrahuz_plan_id) : null;
+  }
+  const id = String(planRow.bigi_plan_id || "");
+  return /^\d+$/.test(id) ? id : null;
+}
+
+/**
+ * Writes an entry into the transactions ledger. The Android app reads this
+ * table directly from Supabase for purchase history, and the admin dashboard
+ * ledger reads it via /api/v2/admin/transactions — logging here keeps both in
+ * sync with wallet movements. Failures inside logTx must never break a
+ * purchase response, so everything is caught.
+ */
+async function logTx({ user_id, title, service_type, amount, recipient, status, reference, provider }) {
+  try {
+    await supabase.from("transactions").insert({
+      user_id,
+      title: String(title || service_type || "Transaction"),
+      service_type,
+      amount: Number(amount) || 0,
+      recipient: String(recipient || "").trim(),
+      status: status || "successful",
+      reference,
+      provider: provider || null,
+    });
+  } catch (err) {
+    console.warn("⚠️ transactions log failed:", err.message);
+  }
+}
+
+function newTxRef(prefix) {
+  return prefix + "-" + Date.now() + "-" + crypto.randomBytes(3).toString("hex").toUpperCase();
 }
 
 // -------------------------------------------------------------
@@ -598,6 +709,7 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
     // Stash the debit on the request so the catch block (which cannot see
     // try-block consts) can refund the exact amount if Bigisub rejects it.
     req._debit = { userId: userId, price: price };
+    const txRef = newTxRef("AIR");
 
     const response = await bigiClient.post("/api/v2/vtu/airtime/purchase/", {
       network: getNetworkId(network),
@@ -609,8 +721,18 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
     console.log("📦 AIRTIME raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
-      // Order was not fulfilled — refund the debit.
+      // Order was not fulfilled — refund the debit and log the failure.
       await creditWallet(userId, price);
+      await logTx({
+        user_id: userId,
+        title: "Airtime ₦" + price + " — Failed",
+        service_type: "airtime",
+        amount: price,
+        recipient: String(phone_number).trim(),
+        status: "failed",
+        reference: txRef,
+        provider: "bigisub"
+      });
       return res.status(400).json({
         success: false,
         message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
@@ -618,6 +740,16 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
     }
 
 
+    await logTx({
+      user_id: userId,
+      title: "Airtime ₦" + price,
+      service_type: "airtime",
+      amount: price,
+      recipient: String(phone_number).trim(),
+      status: "successful",
+      reference: txRef,
+      provider: "bigisub"
+    });
     console.log("✅ Airtime: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     res.json({ success: true, message: "Airtime top-up successful", data: response.data, balance: newBalance });
   } catch (err) {
@@ -651,28 +783,47 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
 app.get("/api/v2/vtu/data/plans", async (req, res) => {
   try {
     const appNetId = Number(req.query.network) || 1;
+    const provider = await getActiveProvider("data");
+
     const { data: plans, error } = await supabase
       .from("data_plans")
       .select("*")
       .eq("network_id", appNetId)
       .eq("is_active", true)
-      .order("buy_price", { ascending: true });
+      .order("retail_price", { ascending: true });
 
     if (error) throw error;
 
-    const formattedPlans = plans.map(p => ({
-      id: Number(p.bigi_plan_id),
-      plan_id: Number(p.bigi_plan_id),
-      network: p.network_id,
-      plantype: p.plan_type,
-      size: p.volume,
-      validity: p.validity,
-      amount: p.retail_price,
-      plan_amount: p.retail_price,
-      buy_price: p.buy_price
-    }));
+    // The id surfaced to the app is the ACTIVE provider's plan id — when the
+    // admin flips the route to Alrahuz, purchases come back with Alrahuz ids
+    // and are fulfilled by Alrahuz without any app update. Plans that cannot
+    // be fulfilled by the ACTIVE provider (e.g. Alrahuz-exclusive rows while
+    // routed to Bigisub) are hidden so the app never shows a dead plan.
+    const formattedPlans = plans
+      .map(p => {
+        const activeId = planProviderId(p, provider);
+        if (!activeId) return null;
+        return {
+          row_id: p.id,
+          id: Number(activeId),
+          plan_id: Number(activeId),
+          bigi_plan_id: /^\d+$/.test(String(p.bigi_plan_id || "")) ? p.bigi_plan_id : null,
+          alrahuz_plan_id: p.alrahuz_plan_id ? Number(p.alrahuz_plan_id) : null,
+          network: p.network_id,
+          plantype: p.plan_type,
+          size: p.volume,
+          validity: p.validity,
+          amount: effectiveRetailPrice(p, provider),
+          plan_amount: effectiveRetailPrice(p, provider),
+          buy_price: provider === "alrahuz"
+            ? (Number(p.alrahuz_buy_price) || p.buy_price)
+            : p.buy_price,
+          provider,
+        };
+      })
+      .filter(Boolean);
 
-    res.json({ success: true, data: formattedPlans });
+    res.json({ success: true, provider, data: formattedPlans });
   } catch (err) {
     console.error("❌ Data plans fetch error:", err.message);
     res.status(500).json({ success: false, message: err.message, data: [] });
@@ -688,22 +839,41 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
     }
 
     const targetPlan = plan || plan_id;
-    const numericPlanId = Number(targetPlan);
-    if (!targetPlan || isNaN(numericPlanId)) {
+    if (!targetPlan) {
       return res.status(400).json({ success: false, message: "Invalid or missing plan ID" });
     }
 
-    // Server-authoritative price: look the plan up in the synced catalog first,
-    // fall back to the client-sent amount only if the plan is unknown.
-    let price = Number(req.body.amount) || 0;
-    const { data: planRow } = await supabase
-      .from("data_plans")
-      .select("retail_price")
-      .eq("bigi_plan_id", numericPlanId)
-      .maybeSingle();
-    if (planRow && Number(planRow.retail_price) > 0) {
-      price = Number(planRow.retail_price);
+    // Which provider is the admin routing data through right now?
+    let provider = await getActiveProvider("data");
+
+    // Resolve the plan in the unified catalog — accepts a Bigisub id, an
+    // Alrahuz id, or the catalog row uuid, so the app works no matter which
+    // provider's ids it currently holds.
+    const planRow = await findPlanRow(targetPlan);
+
+    let fulfillProvider = provider;
+    let providerPlanId = planProviderId(planRow, provider);
+    if (!providerPlanId && planRow) {
+      // Plan exists but has no ID on the routed provider (e.g. an
+      // Alrahuz-exclusive plan while routed to Bigisub). Fall back to the
+      // provider that CAN fulfil it rather than failing the user.
+      const other = provider === "alrahuz" ? "bigisub" : "alrahuz";
+      const otherId = planProviderId(planRow, other);
+      if (otherId) {
+        fulfillProvider = other;
+        providerPlanId = otherId;
+        console.log(`ℹ️ Plan ${targetPlan} not on ${provider} — falling back to ${other}`);
+      }
     }
+
+    if (!fulfillProvider || !providerPlanId) {
+      return res.status(400).json({ success: false, message: "Data plan not found or unavailable" });
+    }
+
+    // Server-authoritative price from the synced catalog; client amount only
+    // as a last resort for unknown plans.
+    let price = planRow ? effectiveRetailPrice(planRow, fulfillProvider) : 0;
+    if (!(price > 0)) price = Number(req.body.amount) || 0;
     if (price <= 0) {
       return res.status(400).json({ success: false, message: "Could not determine plan price" });
     }
@@ -714,61 +884,103 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
     }
 
     // Debit FIRST so an order can never be delivered without charging the
-    // user. Refunded automatically if Bigisub rejects the order below.
+    // user. Refunded automatically if the provider rejects the order below.
     const newBalance = await debitWallet(userId, price);
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
     // Stash the debit on the request so the catch block (which cannot see
-    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    // try-block consts) can refund the exact amount if the provider rejects it.
     req._debit = { userId: userId, price: price };
+    const txRef = newTxRef(fulfillProvider === "alrahuz" ? "ALR" : "BIGI");
 
-    const payload = {
-      network: getNetworkId(network),
-      plan: numericPlanId,
-      phone_number: String(phone_number).trim(),
-      pin: DEFAULT_PIN
-    };
+    let response;
+    if (fulfillProvider === "alrahuz") {
+      response = await alrahuzService.buyData({
+        network: network,
+        mobile_number: String(phone_number).trim(),
+        plan: Number(providerPlanId),
+      });
+    } else {
+      response = await bigiClient.post("/api/v2/vtu/data/purchase/", {
+        network: getNetworkId(network),
+        plan: Number(providerPlanId),
+        phone_number: String(phone_number).trim(),
+        pin: DEFAULT_PIN
+      }).then(r => r.data);
+    }
+    console.log(`📦 DATA raw response (${fulfillProvider}):`, JSON.stringify(response));
 
-    const response = await bigiClient.post("/api/v2/vtu/data/purchase/", payload);
-    console.log("📦 DATA raw response:", JSON.stringify(response.data));
-
-    // Never report success unless Bigisub actually fulfilled the order.
-    if (bigiFailed(response.data)) {
-      // Order was not fulfilled — refund the debit.
+    // Never report success unless the provider actually fulfilled the order.
+    if (bigiFailed(response)) {
+      // Order was not fulfilled — refund the debit and log the failure.
       await creditWallet(userId, price);
+      await logTx({
+        user_id: userId,
+        title: (planRow?.volume ? planRow.volume + " Data" : "Data Purchase") + " — Failed",
+        service_type: "data",
+        amount: price,
+        recipient: String(phone_number).trim(),
+        status: "failed",
+        reference: txRef,
+        provider: fulfillProvider
+      });
       return res.status(400).json({
         success: false,
-        message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
+        message: bigiErrorMessage(response, fulfillProvider === "alrahuz"
+          ? "Alrahuzdata rejected this purchase"
+          : "Bigisub rejected this purchase")
       });
     }
 
+    await logTx({
+      user_id: userId,
+      title: (planRow?.volume ? planRow.volume + " Data" : "Data Purchase") + " — " + String(phone_number).trim(),
+      service_type: "data",
+      amount: price,
+      recipient: String(phone_number).trim(),
+      status: "successful",
+      reference: txRef,
+      provider: fulfillProvider
+    });
 
-    console.log("✅ Data purchase: user " + userId + " plan " + numericPlanId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    console.log("✅ Data purchase (" + fulfillProvider + "): user " + userId + " plan " + providerPlanId + " -₦" + price + " (balance ₦" + newBalance + ")");
     return res.json({
       success: true,
       message: "Data purchase successful",
-      data: response.data,
+      provider: fulfillProvider,
+      reference: txRef,
+      data: response,
       balance: newBalance
     });
   } catch (err) {
-    const bigiError = err.response?.data;
+    const provError = err.response?.data;
     const ctx = req._debit || null;
-    const bigiStatus = err.response?.status || 0;
-    if (bigiStatus >= 400 && bigiStatus < 500) {
-      // Request was NOT placed — refund the debit.
+    const provStatus = err.response?.status || 0;
+    if (provStatus >= 400 && provStatus < 500) {
+      // Request was NOT placed — refund the debit and log the failure.
       if (ctx) {
         await creditWallet(ctx.userId, ctx.price);
+        await logTx({
+          user_id: ctx.userId,
+          title: "Data Purchase — Rejected",
+          service_type: "data",
+          amount: ctx.price,
+          recipient: "",
+          status: "failed",
+          reference: newTxRef("FAIL"),
+          provider: null
+        });
       }
-      console.error("❌ Data rejected by Bigisub:", JSON.stringify(bigiError || err.message, null, 2));
-      return res.status(bigiStatus).json({
+      console.error("❌ Data rejected by provider:", JSON.stringify(provError || err.message, null, 2));
+      return res.status(provStatus).json({
         success: false,
-        message: bigiErrorMessage(bigiError, err.message),
-        errors: bigiError?.errors || null
+        message: bigiErrorMessage(provError, err.message),
+        errors: provError?.errors || null
       });
     }
     // 5xx / timeout / connection error — order may still have been processed.
-    console.error("⚠️ Data outcome uncertain:", JSON.stringify(bigiError || err.message, null, 2));
+    console.error("⚠️ Data outcome uncertain:", JSON.stringify(provError || err.message, null, 2));
     return res.json({
       success: true,
       message: "Data request submitted — delivery may take a few minutes. If you don't receive it, contact support for a refund."
@@ -847,6 +1059,7 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
     // Stash the debit on the request so the catch block (which cannot see
     // try-block consts) can refund the exact amount if Bigisub rejects it.
     req._debit = { userId: userId, price: price };
+    const txRef = newTxRef("CBL");
 
     const response = await bigiClient.post("/api/v2/vtu/cable/purchase/", {
       cable_type: getCableCode(cable_type || provider),
@@ -859,8 +1072,18 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
     console.log("📦 CABLE raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
-      // Order was not fulfilled — refund the debit.
+      // Order was not fulfilled — refund the debit and log the failure.
       await creditWallet(userId, price);
+      await logTx({
+        user_id: userId,
+        title: "Cable TV — Failed",
+        service_type: "cable",
+        amount: price,
+        recipient: String(card_no).trim(),
+        status: "failed",
+        reference: txRef,
+        provider: "bigisub"
+      });
       return res.status(400).json({
         success: false,
         message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
@@ -868,6 +1091,16 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
     }
 
 
+    await logTx({
+      user_id: userId,
+      title: "Cable TV — " + getCableCode(cable_type || provider),
+      service_type: "cable",
+      amount: price,
+      recipient: String(card_no).trim(),
+      status: "successful",
+      reference: txRef,
+      provider: "bigisub"
+    });
     console.log("✅ Cable: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     res.json({ success: true, message: "Cable subscription successful", data: response.data, balance: newBalance });
   } catch (err) {
@@ -978,6 +1211,7 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
     // Stash the debit on the request so the catch block (which cannot see
     // try-block consts) can refund the exact amount if Bigisub rejects it.
     req._debit = { userId: userId, price: price };
+    const txRef = newTxRef("ELEC");
 
     const response = await bigiClient.post("/api/v2/bills/electricity/pay/", {
       company: String(company).trim(),
@@ -991,8 +1225,18 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
     console.log("📦 ELECTRICITY raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
-      // Order was not fulfilled — refund the debit.
+      // Order was not fulfilled — refund the debit and log the failure.
       await creditWallet(userId, price);
+      await logTx({
+        user_id: userId,
+        title: "Electricity — Failed",
+        service_type: "electricity",
+        amount: price,
+        recipient: String(meter_no).trim(),
+        status: "failed",
+        reference: txRef,
+        provider: "bigisub"
+      });
       return res.status(400).json({
         success: false,
         message: bigiErrorMessage(response.data, "Bigisub rejected this payment")
@@ -1000,6 +1244,16 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
     }
 
 
+    await logTx({
+      user_id: userId,
+      title: "Electricity — " + String(company).trim(),
+      service_type: "electricity",
+      amount: price,
+      recipient: String(meter_no).trim(),
+      status: "successful",
+      reference: txRef,
+      provider: "bigisub"
+    });
     console.log("✅ Electricity: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     // The Android app shows the recharge token on the receipt — surface Bigisub's
     // token (whatever shape it arrives in) so the payment screen can display it.
@@ -1071,6 +1325,7 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
     // Stash the debit on the request so the catch block (which cannot see
     // try-block consts) can refund the exact amount if Bigisub rejects it.
     req._debit = { userId: userId, price: price };
+    const txRef = newTxRef("PIN");
 
     const response = await bigiClient.post("/api/v2/vtu/recharge-pin/purchase/", {
       network: netId,
@@ -1083,8 +1338,18 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
     console.log("📦 RECHARGE PIN raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
-      // Order was not fulfilled — refund the debit.
+      // Order was not fulfilled — refund the debit and log the failure.
       await creditWallet(userId, price);
+      await logTx({
+        user_id: userId,
+        title: "Recharge PINs — Failed",
+        service_type: "recharge_pin",
+        amount: price,
+        recipient: String(network || "").trim(),
+        status: "failed",
+        reference: txRef,
+        provider: "bigisub"
+      });
       return res.status(400).json({
         success: false,
         message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
@@ -1092,6 +1357,16 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
     }
 
 
+    await logTx({
+      user_id: userId,
+      title: "Recharge PINs x" + qty,
+      service_type: "recharge_pin",
+      amount: price,
+      recipient: String(network || "").trim(),
+      status: "successful",
+      reference: txRef,
+      provider: "bigisub"
+    });
     console.log("✅ Recharge PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     res.json({ success: true, message: "Recharge PINs generated", data: response.data, balance: newBalance });
   } catch (err) {
@@ -1158,6 +1433,7 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
     // Stash the debit on the request so the catch block (which cannot see
     // try-block consts) can refund the exact amount if Bigisub rejects it.
     req._debit = { userId: userId, price: price };
+    const txRef = newTxRef("EPIN");
 
     const response = await bigiClient.post("/api/v2/bills/result-checker/purchase/", {
       exam: String(exam).trim(),
@@ -1167,8 +1443,18 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
     console.log("📦 EXAM PIN raw response:", JSON.stringify(response.data));
 
     if (bigiFailed(response.data)) {
-      // Order was not fulfilled — refund the debit.
+      // Order was not fulfilled — refund the debit and log the failure.
       await creditWallet(userId, price);
+      await logTx({
+        user_id: userId,
+        title: "Exam PIN — Failed",
+        service_type: "exam_pin",
+        amount: price,
+        recipient: String(exam).trim(),
+        status: "failed",
+        reference: txRef,
+        provider: "bigisub"
+      });
       return res.status(400).json({
         success: false,
         message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
@@ -1176,6 +1462,16 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
     }
 
 
+    await logTx({
+      user_id: userId,
+      title: "Exam PIN (" + String(exam).trim() + ") x" + qty,
+      service_type: "exam_pin",
+      amount: price,
+      recipient: String(exam).trim(),
+      status: "successful",
+      reference: txRef,
+      provider: "bigisub"
+    });
     console.log("✅ Exam PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     // The Android app shows the purchased PINs in a dialog — extract them from
     // whatever shape Bigisub returns (wrapped in data, or a bare array).
@@ -1213,7 +1509,413 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 5. DUAL KEEP-WARM HEALTH ENDPOINT
+// 5. ADMIN ENDPOINTS (require is_admin profile)
+// -------------------------------------------------------------
+
+async function requireAdmin(req, res, next) {
+  try {
+    const token = (req.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+    if (!token) return res.status(401).json({ success: false, message: "No token provided" });
+
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) {
+      return res.status(401).json({ success: false, message: "Invalid or expired token" });
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_admin, role")
+      .eq("id", data.user.id)
+      .maybeSingle();
+
+    if (!profile || (profile.is_admin !== true && profile.role !== "admin")) {
+      return res.status(403).json({ success: false, message: "Admin access required" });
+    }
+
+    req.adminUser = data.user;
+    next();
+  } catch (err) {
+    console.error("❌ Admin auth error:", err.message);
+    res.status(500).json({ success: false, message: "Authentication failed" });
+  }
+}
+
+// GET /api/v2/admin/stats — dashboard summary with dual-provider balances + routes
+app.get("/api/v2/admin/stats", requireAdmin, async (_req, res) => {
+  try {
+    // Fetch both provider balances in parallel
+    let bigisubBalance = 0;
+    let alrahuzBalance = 0;
+    const [bigiResult, alrahuzResult] = await Promise.allSettled([
+      bigiClient.get("/api/v2/balance/").then(r => Number(r.data?.balance || r.data?.data?.balance || 0)),
+      (async () => {
+        try {
+          const alr = require("./services/alrahuz");
+          return await alr.getBalance();
+        } catch (e) { return 0; }
+      })()
+    ]);
+    if (bigiResult.status === "fulfilled") bigisubBalance = bigiResult.value;
+    if (alrahuzResult.status === "fulfilled") alrahuzBalance = alrahuzResult.value;
+
+    // Fetch active provider routes
+    let activeRoutes = { airtime: "bigisub", data: "bigisub", cable: "bigisub", electricity: "bigisub", epin: "bigisub" };
+    try {
+      const { data: routes } = await supabase.from("provider_routing").select("service, provider");
+      if (routes) routes.forEach(r => { activeRoutes[r.service] = r.provider; });
+    } catch (e) {
+      console.warn("⚠️ Could not fetch provider_routing (table may not exist yet):", e.message);
+    }
+
+    const [usersRes, walletRes, txRes] = await Promise.all([
+      supabase.from("profiles").select("id", { count: "exact", head: true }),
+      supabase.from("wallets").select("balance"),
+      supabase.from("transactions").select("id", { count: "exact", head: true })
+    ]);
+
+    const totalUsers = usersRes.count || 0;
+    const totalTransactions = txRes.count || 0;
+    const totalLiability = (walletRes.data || []).reduce((sum, w) => sum + Number(w.balance || 0), 0);
+
+    res.json({
+      success: true,
+      data: {
+        balances: {
+          bigisub: bigisubBalance.toLocaleString("en-NG", { minimumFractionDigits: 2 }),
+          alrahuz: alrahuzBalance.toLocaleString("en-NG", { minimumFractionDigits: 2 })
+        },
+        active_routes: activeRoutes,
+        total_registered_users: totalUsers,
+        total_transactions: totalTransactions,
+        total_wallet_liability: totalLiability
+      }
+    });
+  } catch (err) {
+    console.error("❌ Admin stats error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v2/admin/providers — current routing state
+app.get("/api/v2/admin/providers", requireAdmin, async (_req, res) => {
+  try {
+    let routes = { airtime: "bigisub", data: "bigisub", cable: "bigisub", electricity: "bigisub", epin: "bigisub" };
+    try {
+      const { data } = await supabase.from("provider_routing").select("service, provider");
+      if (data) data.forEach(r => { routes[r.service] = r.provider; });
+    } catch (e) {
+      // Table may not exist yet
+    }
+    res.json({ success: true, data: routes });
+  } catch (err) {
+    console.error("❌ Admin providers error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/v2/admin/providers/route — switch provider(s)
+app.post("/api/v2/admin/providers/route", requireAdmin, async (req, res) => {
+  try {
+    const { global_provider, service, provider } = req.body;
+    const validProviders = ["bigisub", "alrahuz"];
+    const validServices = ["airtime", "data", "cable", "electricity", "epin"];
+
+    // Global switch: update all services at once
+    if (global_provider) {
+      if (!validProviders.includes(global_provider)) {
+        return res.status(400).json({ success: false, message: "Invalid provider. Use 'bigisub' or 'alrahuz'." });
+      }
+      try {
+        for (const svc of validServices) {
+          await supabase
+            .from("provider_routing")
+            .upsert({ service: svc, provider: global_provider, updated_at: new Date().toISOString() }, { onConflict: "service" });
+        }
+      } catch (e) {
+        // Table may not exist — seed via raw inserts
+        for (const svc of validServices) {
+          await supabase.from("provider_routing").delete().eq("service", svc).catch(() => {});
+          await supabase.from("provider_routing").insert({ service: svc, provider: global_provider }).catch(() => {});
+        }
+      }
+      console.log(`✅ Global provider switch: all services → ${global_provider} (by ${req.adminUser.email})`);
+      return res.json({ success: true, message: `All services switched to ${global_provider}` });
+    }
+
+    // Per-service switch
+    if (service && provider) {
+      if (!validServices.includes(service)) {
+        return res.status(400).json({ success: false, message: `Invalid service. Use one of: ${validServices.join(", ")}` });
+      }
+      if (!validProviders.includes(provider)) {
+        return res.status(400).json({ success: false, message: "Invalid provider. Use 'bigisub' or 'alrahuz'." });
+      }
+      try {
+        await supabase
+          .from("provider_routing")
+          .upsert({ service, provider, updated_at: new Date().toISOString() }, { onConflict: "service" });
+      } catch (e) {
+        await supabase.from("provider_routing").delete().eq("service", service).catch(() => {});
+        await supabase.from("provider_routing").insert({ service, provider }).catch(() => {});
+      }
+      console.log(`✅ Provider route: ${service} → ${provider} (by ${req.adminUser.email})`);
+      return res.json({ success: true, message: `${service} switched to ${provider}` });
+    }
+
+    return res.status(400).json({ success: false, message: "Provide either global_provider or (service + provider)" });
+  } catch (err) {
+    console.error("❌ Admin provider route error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v2/admin/users — paginated user list with optional search
+app.get("/api/v2/admin/users", requireAdmin, async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const search = (req.query.search || "").trim();
+    const offset = (page - 1) * limit;
+
+    let query = supabase
+      .from("profiles")
+      .select("id, full_name, email, phone_number, is_admin, role, created_at", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (search) {
+      query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone_number.ilike.%${search}%`);
+    }
+
+    const { data: users, count, error } = await query;
+    if (error) throw error;
+
+    // Fetch wallet balances for this page of users
+    const userIds = (users || []).map(u => u.id);
+    let wallets = [];
+    if (userIds.length) {
+      const { data: w } = await supabase.from("wallets").select("user_id, balance").in("user_id", userIds);
+      wallets = w || [];
+    }
+    const walletMap = {};
+    wallets.forEach(w => { walletMap[w.user_id] = Number(w.balance || 0); });
+
+    const enriched = (users || []).map(u => ({
+      ...u,
+      wallet_balance: walletMap[u.id] || 0
+    }));
+
+    res.json({
+      success: true,
+      data: enriched,
+      pagination: { page, limit, total: count || 0, totalPages: Math.ceil((count || 0) / limit) }
+    });
+  } catch (err) {
+    console.error("❌ Admin users error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/v2/admin/wallet/adjust — credit or debit a user's wallet
+app.post("/api/v2/admin/wallet/adjust", requireAdmin, async (req, res) => {
+  try {
+    const { target_user_id, amount, action, reason } = req.body;
+
+    if (!target_user_id) return res.status(400).json({ success: false, message: "target_user_id is required" });
+    if (!amount || Number(amount) <= 0) return res.status(400).json({ success: false, message: "amount must be a positive number" });
+    if (!["credit", "debit"].includes(action)) return res.status(400).json({ success: false, message: "action must be 'credit' or 'debit'" });
+    if (!reason || !reason.trim()) return res.status(400).json({ success: false, message: "reason is required for wallet adjustments" });
+
+    const amt = Number(amount);
+
+    const rpcName = action === "credit" ? "credit_wallet" : "debit_wallet";
+    const { data: newBalance, error } = await supabase.rpc(rpcName, {
+      p_user_id: target_user_id,
+      p_amount: amt,
+      p_description: `Admin ${action}: ${reason.trim()} (by ${req.adminUser.email})`
+    });
+
+    if (error || newBalance === null || newBalance === undefined) {
+      return res.status(400).json({ success: false, message: error?.message || "Wallet adjustment failed" });
+    }
+
+    // Audit trail
+    try {
+      await supabase.from("transactions").insert({
+        user_id: target_user_id,
+        title: `Admin ${action === "credit" ? "Credit" : "Debit"}`,
+        service_type: "admin_adjust",
+        amount: amt,
+        recipient: req.adminUser.email,
+        status: "successful",
+        reference: `ADMIN-${Date.now()}`
+      });
+    } catch (txErr) {
+      console.warn("⚠️ Admin adjust audit insert failed:", txErr.message);
+    }
+
+    console.log(`✅ Admin ${action}: ${target_user_id} ${action === "credit" ? "+" : "-"}₦${amt} by ${req.adminUser.email} (${reason})`);
+    res.json({ success: true, message: `Wallet ${action}ed successfully`, new_balance: newBalance });
+  } catch (err) {
+    console.error("❌ Admin wallet adjust error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v2/admin/transactions — paginated transaction ledger
+app.get("/api/v2/admin/transactions", requireAdmin, async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 25));
+    const offset = (page - 1) * limit;
+    const statusFilter = (req.query.status || "").trim();
+    const typeFilter = (req.query.service_type || "").trim();
+
+    // NOTE: no PostgREST embed here — the transactions table has NO foreign
+    // key on user_id, so `profiles:user_id(...)` fails with "Could not find a
+    // relationship between 'transactions' and 'user_id'". Profiles are joined
+    // manually below instead.
+    let query = supabase
+      .from("transactions")
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (statusFilter) query = query.eq("status", statusFilter);
+    if (typeFilter) query = query.eq("service_type", typeFilter);
+
+    const { data: txns, count, error } = await query;
+    if (error) throw error;
+
+    // Manual join: attach { profiles: { full_name, email } } so the admin UI
+    // keeps working unchanged.
+    const userIds = [...new Set((txns || []).map(t => t.user_id).filter(Boolean))];
+    const profileMap = {};
+    if (userIds.length) {
+      const { data: profs } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .in("id", userIds);
+      (profs || []).forEach(p => { profileMap[p.id] = p; });
+    }
+
+    const enriched = (txns || []).map(t => ({
+      ...t,
+      profiles: profileMap[t.user_id] || null
+    }));
+
+    res.json({
+      success: true,
+      data: enriched,
+      pagination: { page, limit, total: count || 0, totalPages: Math.ceil((count || 0) / limit) }
+    });
+  } catch (err) {
+    console.error("❌ Admin transactions error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/v2/admin/transactions/refund — refund a transaction
+app.post("/api/v2/admin/transactions/refund", requireAdmin, async (req, res) => {
+  try {
+    const { transaction_id, reason } = req.body;
+
+    if (!transaction_id) return res.status(400).json({ success: false, message: "transaction_id is required" });
+    if (!reason || !reason.trim()) return res.status(400).json({ success: false, message: "reason is required for refunds" });
+
+    // Fetch the transaction
+    const { data: tx, error: txErr } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("id", transaction_id)
+      .maybeSingle();
+    if (txErr || !tx) return res.status(404).json({ success: false, message: "Transaction not found" });
+    if (tx.status === "refunded") return res.status(400).json({ success: false, message: "Transaction already refunded" });
+
+    const refundAmount = Number(tx.amount);
+    if (!refundAmount || refundAmount <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid transaction amount" });
+    }
+
+    // Credit the user's wallet
+    const { data: newBalance, error: creditErr } = await supabase.rpc("credit_wallet", {
+      p_user_id: tx.user_id,
+      p_amount: refundAmount,
+      p_description: `Refund: ${reason.trim()} (by ${req.adminUser.email})`
+    });
+    if (creditErr || newBalance === null || newBalance === undefined) {
+      return res.status(500).json({ success: false, message: creditErr?.message || "Failed to credit wallet" });
+    }
+
+    // Mark the original transaction as refunded
+    await supabase.from("transactions").update({ status: "refunded" }).eq("id", transaction_id);
+
+    // Insert refund audit row
+    try {
+      await supabase.from("transactions").insert({
+        user_id: tx.user_id,
+        title: `Refund: ${tx.title}`,
+        service_type: "refund",
+        amount: refundAmount,
+        recipient: req.adminUser.email,
+        status: "successful",
+        reference: `REFUND-${Date.now()}`
+      });
+    } catch (insErr) {
+      console.warn("⚠️ Refund audit insert failed:", insErr.message);
+    }
+
+    console.log(`✅ Refund: user ${tx.user_id} +₦${refundAmount} for tx ${transaction_id} by ${req.adminUser.email}`);
+    res.json({ success: true, message: "Refund processed successfully", new_balance: newBalance });
+  } catch (err) {
+    console.error("❌ Admin refund error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/v2/admin/plans/update-price — update retail price and active status for a data plan
+app.post("/api/v2/admin/plans/update-price", requireAdmin, async (req, res) => {
+  try {
+    const { plan_id, retail_price, is_active, alrahuz_retail_price } = req.body;
+
+    if (!plan_id) return res.status(400).json({ success: false, message: "plan_id is required" });
+
+    const updates = {};
+    if (retail_price !== undefined && retail_price !== null) {
+      updates.retail_price = Number(retail_price);
+    }
+    // Per-provider selling price override for Alrahuz (null clears it)
+    if (alrahuz_retail_price !== undefined) {
+      updates.alrahuz_retail_price = alrahuz_retail_price === null ? null : Number(alrahuz_retail_price);
+    }
+    if (is_active !== undefined) {
+      updates.is_active = Boolean(is_active);
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ success: false, message: "No fields to update" });
+    }
+    updates.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from("data_plans")
+      .update(updates)
+      .eq("id", plan_id)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ success: false, message: "Plan not found" });
+
+    console.log(`✅ Plan ${plan_id} updated by ${req.adminUser.email}:`, updates);
+    res.json({ success: true, message: "Plan updated successfully", data });
+  } catch (err) {
+    console.error("❌ Admin plan update error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// 6. DUAL KEEP-WARM HEALTH ENDPOINT
 // -------------------------------------------------------------
 app.get("/health", async (_req, res) => {
   try {
