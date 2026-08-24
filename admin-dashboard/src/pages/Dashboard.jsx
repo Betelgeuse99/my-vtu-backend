@@ -49,6 +49,15 @@ function ProviderBadge({ provider }) {
 
 const CACHE_KEY = 'dht_dashboard_cache'
 
+// Zero‑fallback so the dashboard never stays blank if the first fetch fails.
+const fallbackStats = {
+  balances: { bigisub: 0, alrahuz: 0 },
+  total_wallet_liability: 0,
+  total_registered_users: 0,
+  total_transactions: 0,
+  active_routes: {}
+}
+
 export default function Dashboard() {
   // Seed from the last successful fetch (localStorage) so the numbers are
   // ALWAYS visible — even right after login or when the Render service is
@@ -56,11 +65,14 @@ export default function Dashboard() {
   const cached = (() => {
     try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null') } catch { return null }
   })()
-  const [stats, setStats] = useState(cached?.stats || null)
-  const [providers, setProviders] = useState(null)
+  // Start with cached data; if nothing cached yet, use a zero‑fallback so the
+  // UI never stays blank while the first fetch is in flight.
+  const [stats, setStats] = useState(cached?.stats || fallbackStats)
+  const [providers, setProviders] = useState(cached?.providers || null)
   const [recent, setRecent] = useState(cached?.recent || [])
-  const [loading, setLoading] = useState(true)
-  const toast = useToast()
+  // Loading only while the first fetch is pending; if we had no cache we still
+  // show the fallback zeros immediately so there’s no blank screen.
+  const [loading, setLoading] = useState(!cached?.stats)
 
   const fetchStats = async () => {
     setLoading(true)
@@ -70,6 +82,8 @@ export default function Dashboard() {
         api.getProviders(),
         api.getTransactions(1, 8),
       ])
+
+      // ── Stats ──────────────────────────────────────────────
       if (statsRes.status === 'fulfilled') {
         setStats(statsRes.value.data)
         try {
@@ -78,11 +92,19 @@ export default function Dashboard() {
             recent: txRes.status === 'fulfilled' ? (txRes.value.data || []) : [],
           }))
         } catch { /* storage full/unavailable — ignore */ }
-      } else if (!stats) toast.error(statsRes.reason?.message || 'Failed to load stats')
+      } else if (!cached?.stats) {
+        // No cached fallback either — keep the zero‑fallback we already have
+      }
+
+      // ── Providers ────────────────────────────────────────
       if (providersRes.status === 'fulfilled') setProviders(providersRes.value.data)
+
+      // ── Recent transactions ──────────────────────────────
       if (txRes.status === 'fulfilled') setRecent(txRes.value.data || [])
     } catch (err) {
-      toast.error(err.message)
+      // Never leave the dashboard completely blank — keep cached or fallback
+      if (!cached?.stats) setStats(fallbackStats)
+      toast.error(err.message || 'Failed to load dashboard data')
     } finally {
       setLoading(false)
     }
@@ -108,7 +130,7 @@ export default function Dashboard() {
           <p className="text-sm text-gray-500 mt-1">Platform overview and provider status</p>
         </div>
         <button onClick={fetchStats} className="btn-secondary" disabled={loading}>
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          <RefreshCw size={14} className={loading ? 'animate-spin' : '' } />
           Refresh
         </button>
       </div>
@@ -133,7 +155,7 @@ export default function Dashboard() {
               label="Alrahuz Balance"
               value={'₦' + Number(stats.balances?.alrahuz || 0).toLocaleString('en-NG')}
               color="bg-purple-500/15 text-purple-400"
-              sub="Alrahuzdata vendor credit"
+              sub="Alrahuz data vendor credit"
             />
             <StatCard
               icon={TrendingDown}
