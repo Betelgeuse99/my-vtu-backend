@@ -42,6 +42,15 @@ const supabase = createClient(
   }
 })();
 
+// Dedicated client for INTERACTIVE auth (signInWithPassword / refreshSession).
+// CRITICAL: supabase-js stores these sessions internally and rewrites the
+// client's Authorization header — sharing one client for auth + DB queries
+// makes every admin query run as the last-logged-in user, so RLS hides all
+// other users' transactions/wallets until restart.
+const supabaseAuth = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 const BIGISUB_BASE_URL = "https://api.bigisub.ng";
 const BIGISUB_TOKEN = process.env.BIGISUB_TOKEN || process.env.BIGISUB_API_KEY;
 const DEFAULT_PIN = process.env.BIGISUB_PIN || "1234";
@@ -471,7 +480,7 @@ app.post("/auth/refresh", async (req, res) => {
     return res.status(400).json({ success: false, message: "refresh_token required" });
   }
   try {
-    const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
+    const { data, error } = await supabaseAuth.refreshSession({ refresh_token: refreshToken });
     if (error || !data?.session) {
       return res.status(401).json({ success: false, message: "Session expired — please sign in again" });
     }
@@ -497,7 +506,7 @@ app.post("/auth/login", async (req, res) => {
   if (!email || !password) return res.status(400).json({ success: false, message: "Email and password required" });
 
   try {
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: authData, error: authError } = await supabaseAuth.signInWithPassword({ email, password });
 
     if (authError || !authData.user) {
       return res.status(401).json({ success: false, message: "Invalid credentials." });
