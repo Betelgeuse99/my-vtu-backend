@@ -480,7 +480,7 @@ app.post("/auth/refresh", async (req, res) => {
     return res.status(400).json({ success: false, message: "refresh_token required" });
   }
   try {
-    const { data, error } = await supabaseAuth.refreshSession({ refresh_token: refreshToken });
+    const { data, error } = await supabaseAuth.auth.refreshSession({ refresh_token: refreshToken });
     if (error || !data?.session) {
       return res.status(401).json({ success: false, message: "Session expired — please sign in again" });
     }
@@ -506,7 +506,7 @@ app.post("/auth/login", async (req, res) => {
   if (!email || !password) return res.status(400).json({ success: false, message: "Email and password required" });
 
   try {
-    const { data: authData, error: authError } = await supabaseAuth.signInWithPassword({ email, password });
+    const { data: authData, error: authError } = await supabaseAuth.auth.signInWithPassword({ email, password });
 
     if (authError || !authData.user) {
       return res.status(401).json({ success: false, message: "Invalid credentials." });
