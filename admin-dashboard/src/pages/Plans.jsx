@@ -32,7 +32,7 @@ function EditRow({ plan, onSave, onCancel }) {
 
     setSaving(true)
     try {
-      await api.updatePlan(plan.row_id || plan.id, numPrice, active, alrOverride)
+      await api.post('/api/v2/admin/plans/update-price', { plan_id: plan.row_id || plan.id, retail_price: numPrice, is_active: active, alrahuz_retail_price: alrOverride })
       toast.success('Plan updated successfully')
       onSave()
     } catch (err) {
@@ -114,9 +114,9 @@ export default function Plans() {
     setLoading(true)
     setEditingId(null)
     try {
-      const res = await api.getDataPlans(network)
-      setPlans(res.data || [])
-      if (res.provider) setProvider(res.provider)
+      const res = await api.get(`/api/v2/vtu/data/plans?network=${network}`)
+      setPlans(res.data.data || [])
+      if (res.data.provider) setProvider(res.data.provider)
     } catch (err) {
       toast.error(err.message)
     } finally {

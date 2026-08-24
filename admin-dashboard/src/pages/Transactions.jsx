@@ -14,15 +14,14 @@ const statusBadge = (status) => {
 }
 
 export default function Transactions() {
-  const { authReady, session } = useAuth()
+  const { session } = useAuth()
   const [txns, setTxns] = useState([])
   const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1 })
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
 
-  // Refund state
   const [refundTx, setRefundTx] = useState(null)
   const [refundReason, setRefundReason] = useState('')
   const [refundLoading, setRefundLoading] = useState(false)
@@ -34,9 +33,12 @@ export default function Transactions() {
     setLoading(true)
     setError(null)
     try {
-      const res = await api.getTransactions(page, 25, { status: statusFilter, service_type: typeFilter })
-      setTxns(res.data || [])
-      setPagination(res.pagination)
+      const params = new URLSearchParams({ page, limit: 25 })
+      if (statusFilter) params.set('status', statusFilter)
+      if (typeFilter) params.set('service_type', typeFilter)
+      const res = await api.get(`/api/v2/admin/transactions?${params}`)
+      setTxns(res.data.data || [])
+      setPagination(res.data.pagination)
     } catch (err) {
       setError(err.message)
       if (toast) toast.error(err.message)
@@ -45,23 +47,18 @@ export default function Transactions() {
     }
   }, [session, statusFilter, typeFilter, toast])
 
-  // Fetch when auth is ready and session exists
   useEffect(() => {
-    if (authReady && session) {
-      fetchTxns(1)
-    }
-  }, [authReady, session, fetchTxns])
+    if (session) fetchTxns(1)
+  }, [session, fetchTxns])
 
-  // Auto-refresh every 20 seconds
   useEffect(() => {
-    if (!authReady || !session) return
+    if (!session) return
     const timer = setInterval(() => fetchTxns(pagination.page), 20_000)
     return () => clearInterval(timer)
-  }, [authReady, session, fetchTxns, pagination.page])
+  }, [session, fetchTxns, pagination.page])
 
-  // Refetch on filter change
   useEffect(() => {
-    if (authReady && session) fetchTxns(1)
+    if (session) fetchTxns(1)
   }, [statusFilter, typeFilter])
 
   const handleRefund = async () => {
@@ -70,7 +67,7 @@ export default function Transactions() {
 
     setRefundLoading(true)
     try {
-      await api.refundTransaction(refundTx.id, refundReason.trim())
+      await api.post('/api/v2/admin/transactions/refund', { transaction_id: refundTx.id, reason: refundReason.trim() })
       toast.success(`Refund of ₦${Number(refundTx.amount).toLocaleString()} processed`)
       setRefundTx(null)
       setRefundReason('')
@@ -87,16 +84,13 @@ export default function Transactions() {
     return new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   }
 
-  // Show nothing until auth is hydrated
-  if (!authReady) {
+  if (loading && txns.length === 0) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 size={28} className="animate-spin text-brand-400" />
       </div>
     )
   }
-
-  if (!session) return null
 
   return (
     <div className="space-y-6">
@@ -105,7 +99,6 @@ export default function Transactions() {
         <p className="text-sm text-gray-500 mt-1">{pagination.total} total records</p>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative">
           <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -208,7 +201,6 @@ export default function Transactions() {
           </table>
         </div>
 
-        {/* Pagination */}
         {pagination.totalPages > 1 && (
           <div className="flex items-center justify-between px-5 py-3 border-t border-gray-800">
             <p className="text-xs text-gray-500">
@@ -234,7 +226,6 @@ export default function Transactions() {
         )}
       </div>
 
-      {/* Refund confirmation */}
       <ConfirmModal
         open={!!refundTx}
         title="Process Refund"

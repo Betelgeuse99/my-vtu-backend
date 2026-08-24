@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabaseClient'
 import { useToast } from '../components/Toast'
 import { Shield, ArrowRight, Loader2, Mail, Lock } from 'lucide-react'
 
@@ -8,7 +8,6 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const { signIn } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
 
@@ -20,8 +19,13 @@ export default function Login() {
 
     setLoading(true)
     try {
-      const result = await signIn(email.trim(), password.trim())
-      const name = result.user?.user_metadata?.full_name || result.user?.email || 'Admin'
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password.trim(),
+      })
+      if (error) throw error
+
+      const name = data.user?.user_metadata?.full_name || data.user?.email || 'Admin'
       toast.success(`Welcome back, ${name}!`)
       navigate('/')
     } catch (err) {

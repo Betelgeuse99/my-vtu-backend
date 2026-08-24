@@ -49,13 +49,13 @@ function ProviderBadge({ provider }) {
 }
 
 export default function Dashboard() {
-  const { authReady, session } = useAuth()
+  const { session } = useAuth()
   const toast = useToast()
 
   const [stats, setStats] = useState(null)
   const [providers, setProviders] = useState(null)
   const [recent, setRecent] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
 
@@ -65,20 +65,14 @@ export default function Dashboard() {
     setError(null)
     try {
       const [statsRes, providersRes, txRes] = await Promise.allSettled([
-        api.getStats(),
-        api.getProviders(),
-        api.getTransactions(1, 8),
+        api.get('/api/v2/admin/stats'),
+        api.get('/api/v2/admin/providers'),
+        api.get('/api/v2/admin/transactions?page=1&limit=8'),
       ])
 
-      if (statsRes.status === 'fulfilled' && statsRes.value?.data) {
-        setStats(statsRes.value.data)
-      }
-      if (providersRes.status === 'fulfilled' && providersRes.value?.data) {
-        setProviders(providersRes.value.data)
-      }
-      if (txRes.status === 'fulfilled') {
-        setRecent(txRes.value?.data || [])
-      }
+      if (statsRes.status === 'fulfilled') setStats(statsRes.value.data)
+      if (providersRes.status === 'fulfilled') setProviders(providersRes.value.data)
+      if (txRes.status === 'fulfilled') setRecent(txRes.value.data || [])
       setLastUpdated(new Date())
     } catch (err) {
       setError(err.message)
@@ -88,22 +82,17 @@ export default function Dashboard() {
     }
   }, [session, toast])
 
-  // Fetch when auth is ready and session exists
   useEffect(() => {
-    if (authReady && session) {
-      fetchData()
-    }
-  }, [authReady, session, fetchData])
+    if (session) fetchData()
+  }, [session, fetchData])
 
-  // Auto-refresh every 15 seconds while session is active
   useEffect(() => {
-    if (!authReady || !session) return
+    if (!session) return
     const timer = setInterval(fetchData, 15_000)
     return () => clearInterval(timer)
-  }, [authReady, session, fetchData])
+  }, [session, fetchData])
 
-  // Show nothing until auth is hydrated — prevents pre-hydration API calls
-  if (!authReady) {
+  if (loading && !stats) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 size={28} className="animate-spin text-brand-400" />
@@ -111,7 +100,14 @@ export default function Dashboard() {
     )
   }
 
-  if (!session) return null
+  if (error && !stats) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-red-500/30 bg-red-500/10">
+        <AlertTriangle size={18} className="text-red-400 shrink-0" />
+        <p className="text-sm text-red-300">{error}</p>
+      </div>
+    )
+  }
 
   const fmt = (n) => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })
 
@@ -150,13 +146,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {loading && !stats ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={28} className="animate-spin text-brand-400" />
-        </div>
-      ) : stats ? (
+      {stats && (
         <>
-          {/* Provider Balance Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <StatCard
               icon={Wallet}
@@ -187,7 +178,6 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* Active Provider Routes */}
           <div className="card">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -214,7 +204,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Quick Stats Row */}
           <div className="card">
             <p className="text-sm text-gray-500">
               Total Transactions:{' '}
@@ -224,7 +213,6 @@ export default function Dashboard() {
             </p>
           </div>
 
-          {/* Recent Transactions */}
           <div className="card overflow-hidden !p-0">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
               <div>
@@ -278,7 +266,7 @@ export default function Dashboard() {
             </div>
           </div>
         </>
-      ) : null}
+      )}
     </div>
   )
 }
