@@ -196,6 +196,120 @@ async function buyData({ network, mobile_number, plan, Ported_number = true }) {
   return res.data;
 }
 
+// ---------------------------------------------------------------------
+// CABLE SUPPORT (website plan catalog)
+// Alrahuz's API has no plans endpoint; the cable plans live behind the
+// logged-in buy page (/ajax/loadcableplans/?cablename=N). cablename codes:
+// 1=GOTV, 2=DSTV, 3=STARTIME (4=SHOWMAX is not listed on the site).
+// ---------------------------------------------------------------------
+function cableCode(provider) {
+  const clean = String(provider || "").toLowerCase().trim();
+  if (clean.includes("gotv")) return 1;
+  if (clean.includes("dstv")) return 2;
+  if (clean.includes("star")) return 3;
+  if (clean.includes("show")) return 4;
+  return null;
+}
+
+let cablePlansCache = null; // { ts, data: { [cablename]: [ {id, product_name, amount} ] } }
+const CABLE_PLANS_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Scrapes the Alrahuz cable plans for [cablename] (slug or code) from the
+ * logged-in website. Returns BigiSub-shaped rows: { id, product_name, amount }.
+ * Results are cached 5 minutes so the plan list and the purchase resolver
+ * stay consistent without hammering the vendor's site on every request.
+ */
+async function getCablePlans(cablename) {
+  const code = cableCode(cablename);
+  if (code == null) return [];
+
+  const now = Date.now();
+  if (cablePlansCache && now - cablePlansCache.ts < CABLE_PLANS_TTL_MS && cablePlansCache.data[code]) {
+    return cablePlansCache.data[code];
+  }
+
+  const { jar } = await getWebSession();
+  const res = await apiClient.get("/ajax/loadcableplans/", {
+    params: { cablename: code },
+    headers: {
+      Cookie: cookieHeader(jar),
+      Referer: ALRAHUZ_BASE + "/Cablesub/",
+      "X-Requested-With": "XMLHttpRequest",
+    },
+  });
+
+  const html = String(res.data || "");
+  const plans = [];
+  const optRe = /<option\s+([^>]*)>([\s\S]*?)<\/option>/gi;
+  let m;
+  while ((m = optRe.exec(html)) !== null) {
+    const idMatch = m[1].match(/value=["'](\d+)["']/i);
+    if (!idMatch) continue;
+    const label = m[2].replace(/\s+/g, " ").trim();
+    const amount = Number((label.match(/(?:=|₦|N)\s*([\d,]+)/i)?.[1] || "").replace(/,/g, ""));
+    if (!amount) continue;
+    plans.push({
+      id: idMatch[1],
+      product_name: label.replace(/[=].*$/i, "").trim() || "Plan",
+      amount,
+    });
+  }
+
+  if (!cablePlansCache) cablePlansCache = { ts: now, data: {} };
+  cablePlansCache.data[code] = plans;
+  cablePlansCache.ts = now;
+  return plans;
+}
+
+/**
+ * Resolves the Alrahuz cable plan id whose price matches [amount] exactly.
+ * Returns the plan or null. The plans endpoint returns the ACTIVE provider's
+ * catalog, so the amount the app shows equals the Alrahuz plan price and the
+ * match is exact — we never guess a plan by a different price.
+ */
+async function resolveCablePlan(cablename, amount) {
+  const plans = await getCablePlans(cablename);
+  const price = Number(amount) || 0;
+  return plans.find((p) => Math.abs(Number(p.amount) - price) < 1) || null;
+}
+
+// ---------------------------------------------------------------------
+// ELECTRICITY SUPPORT — Alrahuz disco ids (from the /billpayment/ page):
+// 1=Ikeja, 2=Eko, 3=Abuja, 4=Kano, 5=Enugu, 6=Port Harcourt, 7=Ibadan,
+// 8=Kaduna, 9=Jos, 10=Benin, 11=Yola. MeterType: 1=PREPAID, 2=POSTPAID.
+// ---------------------------------------------------------------------
+const DISCOS = [
+  { id: 1,  name: "Ikeja Electric (IKEDC)",        code: "ikeja-electric" },
+  { id: 2,  name: "Eko Electric (EKEDC)",          code: "eko-electric" },
+  { id: 3,  name: "Abuja Electric (AEDC)",         code: "abuja-electric" },
+  { id: 4,  name: "Kano Electric (KEDCO)",         code: "kano-electric" },
+  { id: 5,  name: "Enugu Electric (EEDC)",         code: "enugu-electric" },
+  { id: 6,  name: "Port Harcourt Electric (PHED)", code: "portharcourt-electric" },
+  { id: 7,  name: "Ibadan Electric (IBEDC)",       code: "ibadan-electric" },
+  { id: 8,  name: "Kaduna Electric (KAEDCO)",      code: "kaduna-electric" },
+  { id: 9,  name: "Jos Electric (JED)",            code: "jos-electric" },
+  { id: 10, name: "Benin Electric (BEDC)",         code: "benin-electric" },
+  { id: 11, name: "Yola Electric (YEDC)",          code: "yola-electric" },
+];
+
+function getDiscoList() {
+  return DISCOS.map((d) => ({ name: d.name, code: d.code }));
+}
+
+/** Maps the app's disco code ("ikeja-electric") to Alrahuz's numeric disco id. */
+function discoIdForCode(code) {
+  const clean = String(code || "").toLowerCase().replace(/[^a-z]/g, "");
+  const hit = DISCOS.find((d) => clean.includes(d.code.replace(/[^a-z]/g, "")));
+  return hit ? hit.id : null;
+}
+
+/** Maps the app's meter_type ("prepaid"/"postpaid") to Alrahuz's MeterType. */
+function meterTypeCode(typ) {
+  const t = String(typ || "").toLowerCase();
+  return t.includes("post") ? 2 : 1;
+}
+
 async function buyAirtime({ network, mobile_number, amount, airtime_type = "VTU", Ported_number = true }) {
   const netId = getNetworkId(network);
   const res = await apiClient.post("/api/topup/", {
@@ -257,4 +371,10 @@ module.exports = {
   buyCable,
   validateIUC,
   buyEPin,
+  cableCode,
+  getCablePlans,
+  resolveCablePlan,
+  getDiscoList,
+  discoIdForCode,
+  meterTypeCode,
 };

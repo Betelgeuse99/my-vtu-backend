@@ -1180,9 +1180,17 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
 app.get("/api/v2/vtu/cable/plans", async (req, res) => {
   try {
     const cableName = getCableCode(req.query.cable_name || req.query.provider || "gotv");
-    const response = await bigiClient.get("/api/v2/vtu/cable/plans/?cable_name=" + cableName);
-    const plans = response.data?.data || (Array.isArray(response.data) ? response.data : []);
-    res.json({ success: true, data: plans });
+    // Return the ACTIVE provider's catalog so the prices the app shows are the
+    // prices that provider will actually charge (mirrors the data plans route).
+    const provider = await getActiveProvider("cable");
+    let plans;
+    if (provider === "alrahuz") {
+      plans = await alrahuzService.getCablePlans(cableName);
+    } else {
+      const response = await bigiClient.get("/api/v2/vtu/cable/plans/?cable_name=" + cableName);
+      plans = response.data?.data || (Array.isArray(response.data) ? response.data : []);
+    }
+    res.json({ success: true, provider, data: plans });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message, data: [] });
   }
@@ -1197,18 +1205,29 @@ app.post("/api/v2/vtu/cable/verify", async (req, res) => {
       return res.status(400).json({ success: false, message: "Smartcard / IUC number must be at least 8 characters" });
     }
 
-    const response = await bigiClient.post("/api/v2/vtu/cable/verify/", {
-      cable_name: provider,
-      card_no: cardNo
-    });
+    const activeProvider = await getActiveProvider("cable");
+    let verifyData = {};
+    if (activeProvider === "alrahuz") {
+      const code = alrahuzService.cableCode(provider);
+      if (code == null) {
+        return res.status(400).json({ success: false, message: "Cable provider not supported on Alrahuzdata" });
+      }
+      const r = await alrahuzService.validateIUC({ smart_card_number: cardNo, cablename: code });
+      verifyData = r?.data || r || {};
+    } else {
+      const response = await bigiClient.post("/api/v2/vtu/cable/verify/", {
+        cable_name: provider,
+        card_no: cardNo
+      });
+      verifyData = response.data?.data || {};
+    }
 
-    const verifyData = response.data?.data || {};
     res.json({
       success: true,
       message: "Verification successful",
       data: {
-        customerName: verifyData.customer_name || "VERIFIED CUSTOMER",
-        currentBouquet: verifyData.current_bouquet || "",
+        customerName: verifyData.customer_name || verifyData.name || "VERIFIED CUSTOMER",
+        currentBouquet: verifyData.current_bouquet || verifyData.bouquet || "",
         cardNumber: verifyData.card_number || cardNo,
         cableProvider: verifyData.cable_provider || provider
       }
@@ -1240,27 +1259,56 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
     }
 
     // Debit FIRST so an order can never be delivered without charging the
-    // user. Refunded automatically if Bigisub rejects the order below.
+    // user. Refunded automatically if the provider rejects the order below.
     const newBalance = await debitWallet(userId, price);
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
     // Stash the debit on the request so the catch block (which cannot see
-    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    // try-block consts) can refund the exact amount if the provider rejects it.
     req._debit = { userId: userId, price: price };
     const txRef = newTxRef("CBL");
 
-    const response = await bigiClient.post("/api/v2/vtu/cable/purchase/", {
-      cable_type: getCableCode(cable_type || provider),
-      card_no: String(card_no).trim(),
-      phone_number: String(phone_number).trim(),
-      amount: price,
-      Customer: String(Customer || customerName).trim(),
-      pin: DEFAULT_PIN
-    });
-    console.log("📦 CABLE raw response:", JSON.stringify(response.data));
+    // Route to the ACTIVE provider for cable (provider_routing).
+    const activeProvider = await getActiveProvider("cable");
 
-    if (bigiFailed(response.data)) {
+    let response;
+    if (activeProvider === "alrahuz") {
+      // Alrahuz needs a numeric cablename + cableplan id (no plans API, so we
+      // resolve the plan from the scraped catalog by the exact price shown in
+      // the app — which is the ACTIVE provider's catalog, so it matches).
+      const cablenameCode = alrahuzService.cableCode(cable_type || provider);
+      // Alrahuz only offers GOTV(1), DSTV(2), STARTIME(3) — not SHOWMAX.
+      if (cablenameCode == null || cablenameCode === 4) {
+        await creditWallet(userId, price);
+        return res.status(400).json({ success: false, message: "Cable provider not supported on Alrahuzdata" });
+      }
+      const plan = await alrahuzService.resolveCablePlan(cable_type || provider, price);
+      if (!plan) {
+        await creditWallet(userId, price);
+        return res.status(400).json({
+          success: false,
+          message: "Cable plan not found on Alrahuzdata — please refresh the plan list or route cable back to Bigisub"
+        });
+      }
+      response = await alrahuzService.buyCable({
+        cablename: cablenameCode,
+        cableplan: Number(plan.id),
+        smart_card_number: String(card_no).trim(),
+      });
+    } else {
+      response = (await bigiClient.post("/api/v2/vtu/cable/purchase/", {
+        cable_type: getCableCode(cable_type || provider),
+        card_no: String(card_no).trim(),
+        phone_number: String(phone_number).trim(),
+        amount: price,
+        Customer: String(Customer || customerName).trim(),
+        pin: DEFAULT_PIN
+      })).data;
+    }
+    console.log("📦 CABLE raw response (" + activeProvider + "):", JSON.stringify(response));
+
+    if (bigiFailed(response)) {
       // Order was not fulfilled — refund the debit and log the failure.
       await creditWallet(userId, price);
       await logTx({
@@ -1275,10 +1323,11 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
       });
       return res.status(400).json({
         success: false,
-        message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
+        message: bigiErrorMessage(response, activeProvider === "alrahuz"
+          ? "Alrahuzdata rejected this purchase"
+          : "Bigisub rejected this purchase")
       });
     }
-
 
     await logTx({
       user_id: userId,
@@ -1290,25 +1339,25 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
       reference: txRef,
       provider: cableDisplayName(cable_type || provider)
     });
-    console.log("✅ Cable: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
-    res.json({ success: true, message: "Cable subscription successful", data: response.data, balance: newBalance, reference: txRef });
+    console.log("✅ Cable (" + activeProvider + "): user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    res.json({ success: true, message: "Cable subscription successful", data: response, balance: newBalance, reference: txRef });
   } catch (err) {
     // try-block consts are invisible to catch, so the debit context comes
     // from the request (stashed right after the debit succeeded).
     const ctx = req._debit || null;
-    const bigiStatus = err.response?.status || 0;
-    if (bigiStatus >= 400 && bigiStatus < 500) {
-      // Bigisub rejected the request outright (bad amount, bad phone, auth…)
+    const provStatus = err.response?.status || 0;
+    if (provStatus >= 400 && provStatus < 500) {
+      // The provider rejected the request outright (bad amount, bad card, auth…)
       // — the order was NOT placed. Refund the debit so the user is never
       // charged for an order that didn't happen.
       if (ctx) {
         await creditWallet(ctx.userId, ctx.price);
       }
-      console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
+      console.error("❌ Order rejected by provider:", err.response?.data || err.message);
       return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
     }
-    // 5xx / timeout / connection error: Bigisub may STILL have processed the
-    // order (it has delivered airtime while returning "An error occurred…").
+    // 5xx / timeout / connection error: the provider may STILL have processed
+    // the order (it has delivered airtime while returning "An error occurred…").
     // We already debited, so keep the charge and let the user verify delivery
     // — refunding blindly would hand out free airtime.
     console.error("⚠️ Order outcome uncertain:", err.response?.data || err.message);
@@ -1321,6 +1370,8 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
 
 app.get("/api/v2/vtu/recharge-pin/plans", async (req, res) => {
   try {
+    // NOTE: Alrahuz has NO recharge-pin API endpoint, so recharge pins are
+    // ALWAYS fulfilled by Bigisub regardless of provider_routing.
     const netId = getNetworkId(req.query.network);
     const response = await bigiClient.get("/api/v2/vtu/recharge-pin/plans/?network=" + netId);
     const plans = response.data?.data || (Array.isArray(response.data) ? response.data : []);
@@ -1332,9 +1383,17 @@ app.get("/api/v2/vtu/recharge-pin/plans", async (req, res) => {
 
 app.get("/api/v2/bills/electricity/providers", async (_req, res) => {
   try {
-    const response = await bigiClient.get("/api/v2/bills/electricity/providers/");
-    const providers = response.data?.data?.providers || response.data?.data || [];
-    res.json({ success: true, data: providers });
+    // Return the ACTIVE provider's disco list so the app shows what the
+    // provider can actually fulfil (mirrors the data plans route).
+    const provider = await getActiveProvider("electricity");
+    let data;
+    if (provider === "alrahuz") {
+      data = alrahuzService.getDiscoList();
+    } else {
+      const response = await bigiClient.get("/api/v2/bills/electricity/providers/");
+      data = response.data?.data?.providers || response.data?.data || [];
+    }
+    res.json({ success: true, provider, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message, data: [] });
   }
@@ -1343,18 +1402,33 @@ app.get("/api/v2/bills/electricity/providers", async (_req, res) => {
 app.post("/api/v2/bills/electricity/verify", async (req, res) => {
   try {
     const { company, meter_no, meter_type } = req.body;
-    const response = await bigiClient.post("/api/v2/bills/electricity/verify/", {
-      company: String(company).trim(),
-      meter_no: String(meter_no).trim(),
-      meter_type: String(meter_type || "prepaid").trim()
-    });
-    const verifyData = response.data?.data || {};
+    const activeProvider = await getActiveProvider("electricity");
+    let verifyData = {};
+    if (activeProvider === "alrahuz") {
+      const discoId = alrahuzService.discoIdForCode(company);
+      if (discoId == null) {
+        return res.status(400).json({ success: false, message: "Electricity provider not supported on Alrahuzdata" });
+      }
+      const r = await alrahuzService.validateMeter({
+        meternumber: String(meter_no).trim(),
+        disconame: discoId,
+        mtype: alrahuzService.meterTypeCode(meter_type),
+      });
+      verifyData = r?.data || r || {};
+    } else {
+      const response = await bigiClient.post("/api/v2/bills/electricity/verify/", {
+        company: String(company).trim(),
+        meter_no: String(meter_no).trim(),
+        meter_type: String(meter_type || "prepaid").trim()
+      });
+      verifyData = response.data?.data || {};
+    }
     res.json({
       success: true,
       message: "Meter verified",
       data: {
-        customerName: verifyData.customer_name || "VERIFIED CUSTOMER",
-        customerAddress: verifyData.customer_address || "",
+        customerName: verifyData.customer_name || verifyData.name || "VERIFIED CUSTOMER",
+        customerAddress: verifyData.customer_address || verifyData.address || "",
         meterNumber: verifyData.meter_number || meter_no
       }
     });
@@ -1365,6 +1439,10 @@ app.post("/api/v2/bills/electricity/verify", async (req, res) => {
 
 app.get("/api/v2/bills/result-checker/prices", async (_req, res) => {
   try {
+    // NOTE: Alrahuz has no result-checker price endpoint, so prices always come
+    // from Bigisub. The exam PIN purchase route still routes to the ACTIVE
+    // provider (epin) — the admin is responsible for setting prices that cover
+    // the active provider's cost.
     const response = await bigiClient.get("/api/v2/bills/result-checker/prices/");
     const prices = response.data?.data?.prices || response.data?.data || [];
     res.json({ success: true, data: prices });
@@ -1392,28 +1470,46 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
     }
 
     // Debit FIRST so an order can never be delivered without charging the
-    // user. Refunded automatically if Bigisub rejects the order below.
+    // user. Refunded automatically if the provider rejects the order below.
     const newBalance = await debitWallet(userId, price);
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
     // Stash the debit on the request so the catch block (which cannot see
-    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    // try-block consts) can refund the exact amount if the provider rejects it.
     req._debit = { userId: userId, price: price };
     const txRef = newTxRef("ELEC");
 
-    const response = await bigiClient.post("/api/v2/bills/electricity/pay/", {
-      company: String(company).trim(),
-      meter_no: String(meter_no).trim(),
-      meter_type: String(meter_type || "prepaid").trim(),
-      phone_number: String(phone_number).trim(),
-      amount: price,
-      Customer_name: String(Customer_name || customerName || "").trim(),
-      pin: DEFAULT_PIN
-    });
-    console.log("📦 ELECTRICITY raw response:", JSON.stringify(response.data));
+    // Route to the ACTIVE provider for electricity (provider_routing).
+    const activeProvider = await getActiveProvider("electricity");
 
-    if (bigiFailed(response.data)) {
+    let response;
+    if (activeProvider === "alrahuz") {
+      const discoId = alrahuzService.discoIdForCode(company);
+      if (discoId == null) {
+        await creditWallet(userId, price);
+        return res.status(400).json({ success: false, message: "Electricity provider not supported on Alrahuzdata" });
+      }
+      response = await alrahuzService.buyElectricity({
+        disco_name: discoId,
+        amount: price,
+        meter_number: String(meter_no).trim(),
+        MeterType: alrahuzService.meterTypeCode(meter_type),
+      });
+    } else {
+      response = (await bigiClient.post("/api/v2/bills/electricity/pay/", {
+        company: String(company).trim(),
+        meter_no: String(meter_no).trim(),
+        meter_type: String(meter_type || "prepaid").trim(),
+        phone_number: String(phone_number).trim(),
+        amount: price,
+        Customer_name: String(Customer_name || customerName || "").trim(),
+        pin: DEFAULT_PIN
+      })).data;
+    }
+    console.log("📦 ELECTRICITY raw response (" + activeProvider + "):", JSON.stringify(response));
+
+    if (bigiFailed(response)) {
       // Order was not fulfilled — refund the debit and log the failure.
       await creditWallet(userId, price);
       await logTx({
@@ -1428,10 +1524,11 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
       });
       return res.status(400).json({
         success: false,
-        message: bigiErrorMessage(response.data, "Bigisub rejected this payment")
+        message: bigiErrorMessage(response, activeProvider === "alrahuz"
+          ? "Alrahuzdata rejected this payment"
+          : "Bigisub rejected this payment")
       });
     }
-
 
     await logTx({
       user_id: userId,
@@ -1443,28 +1540,28 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
       reference: txRef,
       provider: String(company).trim().toUpperCase()
     });
-    console.log("✅ Electricity: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
-    // The Android app shows the recharge token on the receipt — surface Bigisub's
-    // token (whatever shape it arrives in) so the payment screen can display it.
-    const token = response.data?.data?.token || response.data?.token || null;
-    res.json({ success: true, message: "Electricity bill paid", data: response.data, token: token, balance: newBalance, reference: txRef });
+    console.log("✅ Electricity (" + activeProvider + "): user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    // The Android app shows the recharge token on the receipt — surface the
+    // provider's token (whatever shape it arrives in) so the screen can show it.
+    const token = response?.data?.token || response?.token || null;
+    res.json({ success: true, message: "Electricity bill paid", data: response, token: token, balance: newBalance, reference: txRef });
   } catch (err) {
     // try-block consts are invisible to catch, so the debit context comes
     // from the request (stashed right after the debit succeeded).
     const ctx = req._debit || null;
-    const bigiStatus = err.response?.status || 0;
-    if (bigiStatus >= 400 && bigiStatus < 500) {
-      // Bigisub rejected the request outright (bad amount, bad phone, auth…)
+    const provStatus = err.response?.status || 0;
+    if (provStatus >= 400 && provStatus < 500) {
+      // The provider rejected the request outright (bad amount, bad phone, auth…)
       // — the order was NOT placed. Refund the debit so the user is never
       // charged for an order that didn't happen.
       if (ctx) {
         await creditWallet(ctx.userId, ctx.price);
       }
-      console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
+      console.error("❌ Order rejected by provider:", err.response?.data || err.message);
       return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
     }
-    // 5xx / timeout / connection error: Bigisub may STILL have processed the
-    // order (it has delivered airtime while returning "An error occurred…").
+    // 5xx / timeout / connection error: the provider may STILL have processed
+    // the order (it has delivered airtime while returning "An error occurred…").
     // We already debited, so keep the charge and let the user verify delivery
     // — refunding blindly would hand out free airtime.
     console.error("⚠️ Order outcome uncertain:", err.response?.data || err.message);
@@ -1490,6 +1587,7 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
     }
 
     // Resolve the unit price from Bigisub's own plan catalog, then charge qty x price.
+    // Alrahuz has NO recharge-pin endpoint — recharge pins are Bigisub-only.
     const netId = getNetworkId(network);
     const plansRes = await bigiClient.get("/api/v2/vtu/recharge-pin/plans/?network=" + netId);
     const plans = plansRes.data?.data || (Array.isArray(plansRes.data) ? plansRes.data : []);
@@ -1614,24 +1712,35 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
     }
 
     // Debit FIRST so an order can never be delivered without charging the
-    // user. Refunded automatically if Bigisub rejects the order below.
+    // user. Refunded automatically if the provider rejects the order below.
     const newBalance = await debitWallet(userId, price);
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
     // Stash the debit on the request so the catch block (which cannot see
-    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    // try-block consts) can refund the exact amount if the provider rejects it.
     req._debit = { userId: userId, price: price };
     const txRef = newTxRef("EPIN");
 
-    const response = await bigiClient.post("/api/v2/bills/result-checker/purchase/", {
-      exam: String(exam).trim(),
-      quantity: qty,
-      pin_code: String(pin_code || DEFAULT_PIN).trim()
-    });
-    console.log("📦 EXAM PIN raw response:", JSON.stringify(response.data));
+    // Route to the ACTIVE provider for epin (provider_routing).
+    const activeProvider = await getActiveProvider("epin");
 
-    if (bigiFailed(response.data)) {
+    let response;
+    if (activeProvider === "alrahuz") {
+      response = await alrahuzService.buyEPin({
+        exam_name: String(exam).trim(),
+        quantity: qty,
+      });
+    } else {
+      response = (await bigiClient.post("/api/v2/bills/result-checker/purchase/", {
+        exam: String(exam).trim(),
+        quantity: qty,
+        pin_code: String(pin_code || DEFAULT_PIN).trim()
+      })).data;
+    }
+    console.log("📦 EXAM PIN raw response (" + activeProvider + "):", JSON.stringify(response));
+
+    if (bigiFailed(response)) {
       // Order was not fulfilled — refund the debit and log the failure.
       await creditWallet(userId, price);
       await logTx({
@@ -1646,10 +1755,11 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
       });
       return res.status(400).json({
         success: false,
-        message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
+        message: bigiErrorMessage(response, activeProvider === "alrahuz"
+          ? "Alrahuzdata rejected this purchase"
+          : "Bigisub rejected this purchase")
       });
     }
-
 
     await logTx({
       user_id: userId,
@@ -1661,32 +1771,32 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
       reference: txRef,
       provider: null
     });
-    console.log("✅ Exam PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    console.log("✅ Exam PIN (" + activeProvider + "): user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     // The Android app shows the purchased PINs in a dialog — extract them from
-    // whatever shape Bigisub returns (wrapped in data, or a bare array).
-    const rawData = response.data?.data;
+    // whatever shape the provider returns (wrapped in data, or a bare array).
+    const rawData = response?.data;
     const pins =
-      response.data?.pins ||
+      response?.pins ||
       rawData?.pins ||
       (Array.isArray(rawData) ? rawData : []);
-    res.json({ success: true, message: "Exam PINs generated", data: response.data, pins: pins, balance: newBalance, reference: txRef });
+    res.json({ success: true, message: "Exam PINs generated", data: response, pins: pins, balance: newBalance, reference: txRef });
   } catch (err) {
     // try-block consts are invisible to catch, so the debit context comes
     // from the request (stashed right after the debit succeeded).
     const ctx = req._debit || null;
-    const bigiStatus = err.response?.status || 0;
-    if (bigiStatus >= 400 && bigiStatus < 500) {
-      // Bigisub rejected the request outright (bad amount, bad phone, auth…)
+    const provStatus = err.response?.status || 0;
+    if (provStatus >= 400 && provStatus < 500) {
+      // The provider rejected the request outright (bad amount, bad phone, auth…)
       // — the order was NOT placed. Refund the debit so the user is never
       // charged for an order that didn't happen.
       if (ctx) {
         await creditWallet(ctx.userId, ctx.price);
       }
-      console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
+      console.error("❌ Order rejected by provider:", err.response?.data || err.message);
       return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
     }
-    // 5xx / timeout / connection error: Bigisub may STILL have processed the
-    // order (it has delivered airtime while returning "An error occurred…").
+    // 5xx / timeout / connection error: the provider may STILL have processed
+    // the order (it has delivered airtime while returning "An error occurred…").
     // We already debited, so keep the charge and let the user verify delivery
     // — refunding blindly would hand out free airtime.
     console.error("⚠️ Order outcome uncertain:", err.response?.data || err.message);
