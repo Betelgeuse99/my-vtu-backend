@@ -8,6 +8,7 @@ const networkNames = { 1: 'MTN', 2: 'Glo', 3: 'Airtel', 4: '9mobile' }
 
 function EditRow({ plan, onSave, onCancel }) {
   const [price, setPrice] = useState(plan.retail_price || '')
+  const [alrPrice, setAlrPrice] = useState(plan.alrahuz_retail_price ?? '')
   const [active, setActive] = useState(plan.is_active)
   const [saving, setSaving] = useState(false)
   const toast = useToast()
@@ -20,9 +21,18 @@ function EditRow({ plan, onSave, onCancel }) {
     const maxBuy = Math.max(...buys)
     if (numPrice < maxBuy) return toast.error('Retail price must be ≥ highest buy price')
 
+    let alrOverride = null
+    if (alrPrice !== '' && alrPrice !== null) {
+      alrOverride = Number(alrPrice)
+      if (isNaN(alrOverride)) return toast.error('Alrahuz retail must be a number')
+      if (alrOverride > 0 && Number(plan.alrahuz_buy_price || 0) > 0 && alrOverride < Number(plan.alrahuz_buy_price)) {
+        return toast.error('Alrahuz retail must be ≥ Alrahuz buy price')
+      }
+    }
+
     setSaving(true)
     try {
-      await api.updatePlan(plan.row_id || plan.id, numPrice, active)
+      await api.updatePlan(plan.row_id || plan.id, numPrice, active, alrOverride)
       toast.success('Plan updated successfully')
       onSave()
     } catch (err) {
@@ -55,6 +65,20 @@ function EditRow({ plan, onSave, onCancel }) {
             autoFocus
           />
         </div>
+      </td>
+      <td className="px-5 py-3">
+        {plan.alrahuz_plan_id ? (
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 text-sm">₦</span>
+            <input
+              type="number"
+              value={alrPrice}
+              onChange={e => setAlrPrice(e.target.value)}
+              placeholder="same"
+              className="input !w-24 !py-1.5"
+            />
+          </div>
+        ) : <span className="text-xs text-gray-600">—</span>}
       </td>
       <td className="px-5 py-3">
         <button onClick={() => setActive(!active)} className="transition-colors">
@@ -145,17 +169,18 @@ export default function Plans() {
                 <th className="px-5 py-3">Alrahuz ID</th>
                 <th className="px-5 py-3">Alrahuz Buy</th>
                 <th className="px-5 py-3">Retail Price</th>
+                <th className="px-5 py-3" title="Optional per-provider selling price when routed to Alrahuz; empty = same as Retail Price">Alrahuz Retail</th>
                 <th className="px-5 py-3">Active</th>
                 <th className="px-5 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="px-5 py-12 text-center text-gray-500">
+                <tr><td colSpan={9} className="px-5 py-12 text-center text-gray-500">
                   <Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-400" /> Loading plans…
                 </td></tr>
               ) : plans.length === 0 ? (
-                <tr><td colSpan={8} className="px-5 py-12 text-center text-gray-500">
+                <tr><td colSpan={9} className="px-5 py-12 text-center text-gray-500">
                   <Wifi size={24} className="mx-auto mb-2 text-gray-600" /> No plans for {networkNames[network]}
                 </td></tr>
               ) : (
@@ -183,6 +208,13 @@ export default function Plans() {
                         {plan.alrahuz_buy_price != null ? `₦${Number(plan.alrahuz_buy_price).toLocaleString()}` : '—'}
                       </td>
                       <td className="px-5 py-3 font-mono text-sm text-gray-200">₦{Number(plan.retail_price || 0).toLocaleString()}</td>
+                      <td className="px-5 py-3 font-mono text-xs">
+                        {plan.alrahuz_plan_id
+                          ? (plan.alrahuz_retail_price != null
+                            ? <span className="text-purple-400">₦{Number(plan.alrahuz_retail_price).toLocaleString()}</span>
+                            : <span className="text-gray-500" title="Uses the shared retail price">= retail</span>)
+                          : '—'}
+                      </td>
                       <td className="px-5 py-3">
                         {plan.is_active ? (
                           <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
@@ -213,4 +245,5 @@ export default function Plans() {
     </div>
   )
 }
+
 

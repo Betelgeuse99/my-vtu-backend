@@ -46,10 +46,23 @@ function volumeToMb(size) {
 
 async function main() {
   console.log("Logging into Alrahuz website & scraping plan catalog...");
-  const existingRes = await supabase.from("data_plans").select("id, network_id, volume, alrahuz_plan_id");
+  const existingRes = await supabase.from("data_plans").select("id, network_id, volume, plan_type, alrahuz_plan_id");
   if (existingRes.error) throw existingRes.error;
   const existing = existingRes.data || [];
   console.log(`Existing catalog rows: ${existing.length}`);
+
+  // Track which Alrahuz IDs are already placed on some row so one Alrahuz
+  // plan never gets mapped onto two rows.
+  const usedAlrahuz = new Set(
+    existing.map((r) => String(r.alrahuz_plan_id || "")).filter(Boolean)
+  );
+
+  // Provider type vocabularies differ slightly — normalize before comparing
+  function typeNorm(t) {
+    const s = String(t || "").toUpperCase().trim();
+    if (s === "CORPORATE GIFTING") return "CGIFTING";
+    return s;
+  }
 
   let matched = 0;
   let inserted = 0;
@@ -69,34 +82,43 @@ async function main() {
       const mb = volumeToMb(p.size);
       if (!mb) continue;
 
-      // 1) Already mapped to this exact Alrahuz ID? Just refresh its cost.
-      const alreadyMapped = existing.find(
-        (row) => String(row.alrahuz_plan_id) === String(p.id)
-      );
-      if (alreadyMapped) {
-        const { error } = await supabase
-          .from("data_plans")
-          .update({
-            alrahuz_buy_price: Number(p.amount) || null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", alreadyMapped.id);
-        if (error) {
-          console.warn(`  ⚠️ price refresh ${p.size} (#${p.id}): ${error.message}`);
-        } else {
-          matched++;
+      // Already mapped to this exact Alrahuz ID? Just refresh its cost.
+      if (usedAlrahuz.has(String(p.id))) {
+        const alreadyMapped = existing.find(
+          (row) => String(row.alrahuz_plan_id) === String(p.id)
+        );
+        if (alreadyMapped) {
+          const { error } = await supabase
+            .from("data_plans")
+            .update({
+              alrahuz_buy_price: Number(p.amount) || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", alreadyMapped.id);
+          if (!error) matched++;
         }
         continue;
       }
 
-      // 2) Same network + equivalent volume without an Alrahuz mapping yet?
-      const candidate = existing.find((row) => {
+      // Pass 1: same network + volume + equivalent plan type
+      let candidate = existing.find((row) => {
         return (
           row.network_id === appNet &&
+          !row.alrahuz_plan_id &&
           volumeToMb(row.volume) === mb &&
-          !row.alrahuz_plan_id
+          typeNorm(row.plan_type) === typeNorm(p.plantype)
         );
       });
+      // Pass 2: any same-network, same-volume row without a mapping yet
+      if (!candidate) {
+        candidate = existing.find((row) => {
+          return (
+            row.network_id === appNet &&
+            !row.alrahuz_plan_id &&
+            volumeToMb(row.volume) === mb
+          );
+        });
+      }
 
       if (candidate) {
         const { error } = await supabase
@@ -111,6 +133,7 @@ async function main() {
           console.warn(`  ⚠️ could not map ${p.size} (#${p.id}): ${error.message}`);
         } else {
           candidate.alrahuz_plan_id = String(p.id); // keep local cache fresh
+          usedAlrahuz.add(String(p.id));
           matched++;
         }
       } else {
@@ -137,9 +160,11 @@ async function main() {
           existing.push({
             network_id: appNet,
             volume: p.size,
+            plan_type: (p.plantype || "SME").toUpperCase(),
             alrahuz_plan_id: String(p.id),
             id: "new",
           });
+          usedAlrahuz.add(String(p.id));
           inserted++;
         }
       }

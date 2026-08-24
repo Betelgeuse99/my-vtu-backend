@@ -16,19 +16,31 @@ class ApiClient {
     return this._token
   }
 
-  async _fetch(method, path, body) {
+  async _fetch(method, path, body, retries = 1) {
     const headers = { 'Content-Type': 'application/json' }
     if (this._token) headers['Authorization'] = `Bearer ${this._token}`
 
-    const res = await fetch(BASE + path, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    })
-
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(json.message || `HTTP ${res.status}`)
-    return json
+    // Retry once on network errors / 5xx / 429 — Render's free tier sleeps
+    // and the first wake-up request can fail or crawl; a single retry hides
+    // most of that flakiness from the UI.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const res = await fetch(BASE + path, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+        })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          if (attempt < retries && (res.status >= 500 || res.status === 429)) continue
+          throw new Error(json.message || `HTTP ${res.status}`)
+        }
+        return json
+      } catch (err) {
+        if (attempt < retries && !(err instanceof Error && /^HTTP 4/.test(err.message))) continue
+        throw err
+      }
+    }
   }
 
   // Auth
@@ -61,8 +73,10 @@ class ApiClient {
     return this._fetch('POST', '/api/v2/admin/transactions/refund', { transaction_id, reason })
   }
 
-  updatePlan(plan_id, retail_price, is_active) {
-    return this._fetch('POST', '/api/v2/admin/plans/update-price', { plan_id, retail_price, is_active })
+  updatePlan(plan_id, retail_price, is_active, alrahuz_retail_price) {
+    const body = { plan_id, retail_price, is_active }
+    if (alrahuz_retail_price !== undefined) body.alrahuz_retail_price = alrahuz_retail_price
+    return this._fetch('POST', '/api/v2/admin/plans/update-price', body)
   }
 
   getDataPlans(network = 1) {

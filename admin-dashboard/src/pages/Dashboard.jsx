@@ -47,10 +47,18 @@ function ProviderBadge({ provider }) {
   )
 }
 
+const CACHE_KEY = 'dht_dashboard_cache'
+
 export default function Dashboard() {
-  const [stats, setStats] = useState(null)
+  // Seed from the last successful fetch (localStorage) so the numbers are
+  // ALWAYS visible — even right after login or when the Render service is
+  // cold-starting. Live data replaces it as soon as a fetch succeeds.
+  const cached = (() => {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null') } catch { return null }
+  })()
+  const [stats, setStats] = useState(cached?.stats || null)
   const [providers, setProviders] = useState(null)
-  const [recent, setRecent] = useState([])
+  const [recent, setRecent] = useState(cached?.recent || [])
   const [loading, setLoading] = useState(true)
   const toast = useToast()
 
@@ -62,8 +70,15 @@ export default function Dashboard() {
         api.getProviders(),
         api.getTransactions(1, 8),
       ])
-      if (statsRes.status === 'fulfilled') setStats(statsRes.value.data)
-      else toast.error(statsRes.reason?.message || 'Failed to load stats')
+      if (statsRes.status === 'fulfilled') {
+        setStats(statsRes.value.data)
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify({
+            stats: statsRes.value.data,
+            recent: txRes.status === 'fulfilled' ? (txRes.value.data || []) : [],
+          }))
+        } catch { /* storage full/unavailable — ignore */ }
+      } else if (!stats) toast.error(statsRes.reason?.message || 'Failed to load stats')
       if (providersRes.status === 'fulfilled') setProviders(providersRes.value.data)
       if (txRes.status === 'fulfilled') setRecent(txRes.value.data || [])
     } catch (err) {
