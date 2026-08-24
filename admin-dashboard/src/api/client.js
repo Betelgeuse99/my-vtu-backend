@@ -1,115 +1,63 @@
-// Centralized API client for the admin dashboard.
-// Reads the auth token from localStorage and forwards it on every request.
-// Handles Supabase's 1h access-token expiry transparently: a refresh token
-// is stored alongside and exchanged via /auth/refresh whenever a call 401s.
+// API client that dynamically reads the Supabase access token from the
+// client-side Supabase session on every request. Handles 401s by
+// calling supabase.auth.refreshSession() and replaying the failed request.
+
+import { supabase } from '../lib/supabase'
 
 const BASE = import.meta.env.VITE_API_BASE || ''
 
 class ApiClient {
-  _token = localStorage.getItem('admin_token') || ''
-  _refresh = localStorage.getItem('admin_refresh') || ''
-  _refreshing = null
-  _lastRefreshFailed = false
+  // No token state stored here — the source of truth is supabase.auth.getSession()
 
-  set token(t) {
-    this._token = t
-    if (t) localStorage.setItem('admin_token', t)
-    else localStorage.removeItem('admin_token')
+  async _getToken() {
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.access_token || null
   }
 
-  get token() {
-    return this._token
-  }
-
-  set refresh(t) {
-    this._refresh = t
-    if (t) localStorage.setItem('admin_refresh', t)
-    else localStorage.removeItem('admin_refresh')
-  }
-
-  get refresh() {
-    return this._refresh
-  }
-
-  get isSessionValid() {
-    return !this._lastRefreshFailed
-  }
-
-  login(token, refreshToken) {
-    this.token = token
-    this.refresh = refreshToken || ''
-    this._lastRefreshFailed = false
-  }
-
-  logout() {
-    this.token = ''
-    this.refresh = ''
-  }
-
-  /** Exchange the stored refresh token for a fresh session. */
   async _doRefresh() {
-    if (!this._refresh) throw new Error('Session expired — please sign in again')
-    // Coalesce concurrent refreshes into one request
-    this._refreshing = this._refreshing || (async () => {
-      const res = await fetch(BASE + '/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: this._refresh }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        // Refresh failed — mark session invalid but DO NOT clear tokens.
-        // Clearing tokens would redirect to login and wipe the dashboard.
-        // The dashboard keeps showing cached data instead.
-        this._lastRefreshFailed = true
-        throw new Error(json.message || 'Session expired — please sign in again')
-      }
-      this.login(json.session.access_token, json.session.refresh_token)
-      return true
-    })()
-    try {
-      return await this._refreshing
-    } finally {
-      this._refreshing = null
+    const { data, error } = await supabase.auth.refreshSession()
+    if (error || !data?.session) {
+      throw new Error('Session expired — please sign in again')
     }
+    return data.session.access_token
   }
 
-  async _fetch(method, path, body, retries = 1, refreshed = false) {
+  async _fetch(method, path, body, _retries = 1, _refreshed = false) {
+    const token = await this._getToken()
     const headers = { 'Content-Type': 'application/json' }
-    if (this._token) headers['Authorization'] = `Bearer ${this._token}`
+    if (token) headers['Authorization'] = `Bearer ${token}`
 
-    // Retry once on network errors / 5xx / 429 — Render's free tier sleeps
-    // and the first wake-up request can fail or crawl; a single retry hides
-    // most of that flakiness from the UI.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        const res = await fetch(BASE + path, {
-          method,
-          headers,
-          body: body ? JSON.stringify(body) : undefined,
-        })
+    const res = await fetch(BASE + path, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    })
 
-        // Access token expired — refresh once and replay the request
-        if (res.status === 401 && !refreshed && this._refresh) {
-          await this._doRefresh()
-          return this._fetch(method, path, body, retries, true)
-        }
+    // 401 → refresh session once, then retry
+    if (res.status === 401 && !_refreshed) {
+      const newToken = await this._doRefresh()
+      const retryHeaders = { 'Content-Type': 'application/json' }
+      if (newToken) retryHeaders['Authorization'] = `Bearer ${newToken}`
 
-        const json = await res.json().catch(() => ({}))
-        if (!res.ok) {
-          if (attempt < retries && (res.status >= 500 || res.status === 429)) continue
-          throw new Error(json.message || `HTTP ${res.status}`)
-        }
-        return json
-      } catch (err) {
-        if (
-          attempt < retries &&
-          !(err instanceof Error && /^HTTP 4/.test(err.message)) &&
-          !(err instanceof Error && err.message.includes('sign in'))
-        ) continue
-        throw err
+      const retryRes = await fetch(BASE + path, {
+        method,
+        headers: retryHeaders,
+        body: body ? JSON.stringify(body) : undefined,
+      })
+
+      if (!retryRes.ok) {
+        const json = await retryRes.json().catch(() => ({}))
+        throw new Error(json.message || `HTTP ${retryRes.status}`)
       }
+      return retryRes.json()
     }
+
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      throw new Error(json.message || `HTTP ${res.status}`)
+    }
+
+    return res.json()
   }
 
   // ── Admin endpoints ──────────────────────────────────────────
@@ -148,7 +96,6 @@ class ApiClient {
     return this._fetch('GET', `/api/v2/vtu/data/plans?network=${network}`)
   }
 
-  // ── Provider routing ─────────────────────────────────────────
   getProviders() {
     return this._fetch('GET', '/api/v2/admin/providers')
   }

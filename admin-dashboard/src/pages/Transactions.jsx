@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api/client'
+import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
 import { ChevronLeft, ChevronRight, Loader2, RotateCcw, Filter } from 'lucide-react'
@@ -13,13 +14,13 @@ const statusBadge = (status) => {
 }
 
 export default function Transactions() {
+  const { authReady, session } = useAuth()
   const [txns, setTxns] = useState([])
   const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1 })
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
-  const pageRef = useRef(1)
-  const mountedRef = useRef(true)
 
   // Refund state
   const [refundTx, setRefundTx] = useState(null)
@@ -29,35 +30,39 @@ export default function Transactions() {
   const toast = useToast()
 
   const fetchTxns = useCallback(async (page = 1) => {
+    if (!session) return
     setLoading(true)
+    setError(null)
     try {
       const res = await api.getTransactions(page, 25, { status: statusFilter, service_type: typeFilter })
-      if (!mountedRef.current) return
       setTxns(res.data || [])
       setPagination(res.pagination)
-      pageRef.current = page
     } catch (err) {
-      if (!mountedRef.current) return
-      // Keep existing txns on error — never clear the table
+      setError(err.message)
       if (toast) toast.error(err.message)
     } finally {
-      if (mountedRef.current) setLoading(false)
+      setLoading(false)
     }
-  }, [statusFilter, typeFilter, toast])
+  }, [session, statusFilter, typeFilter, toast])
 
+  // Fetch when auth is ready and session exists
   useEffect(() => {
-    mountedRef.current = true
-    fetchTxns(1)
-    return () => { mountedRef.current = false }
-  }, [fetchTxns])
+    if (authReady && session) {
+      fetchTxns(1)
+    }
+  }, [authReady, session, fetchTxns])
 
-  // Auto-refresh every 20 seconds — only refresh current page, never reset to page 1
+  // Auto-refresh every 20 seconds
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (mountedRef.current) fetchTxns(pageRef.current)
-    }, 20_000)
+    if (!authReady || !session) return
+    const timer = setInterval(() => fetchTxns(pagination.page), 20_000)
     return () => clearInterval(timer)
-  }, [fetchTxns])
+  }, [authReady, session, fetchTxns, pagination.page])
+
+  // Refetch on filter change
+  useEffect(() => {
+    if (authReady && session) fetchTxns(1)
+  }, [statusFilter, typeFilter])
 
   const handleRefund = async () => {
     if (!refundTx) return
@@ -81,6 +86,17 @@ export default function Transactions() {
     if (!d) return '—'
     return new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   }
+
+  // Show nothing until auth is hydrated
+  if (!authReady) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 size={28} className="animate-spin text-brand-400" />
+      </div>
+    )
+  }
+
+  if (!session) return null
 
   return (
     <div className="space-y-6">
@@ -121,6 +137,12 @@ export default function Transactions() {
           <option value="exam_pin">Exam PIN</option>
         </select>
       </div>
+
+      {error && (
+        <div className="px-4 py-3 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-300">
+          {error}
+        </div>
+      )}
 
       <div className="card overflow-hidden !p-0">
         <div className="overflow-x-auto">

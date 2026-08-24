@@ -11,9 +11,9 @@ import Plans from './pages/Plans'
 import { Loader2 } from 'lucide-react'
 
 function RequireAuth({ children }) {
-  const { user, loading } = useAuth()
+  const { user, authReady } = useAuth()
 
-  if (loading) {
+  if (!authReady) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 size={28} className="animate-spin text-brand-400" />
@@ -25,9 +25,9 @@ function RequireAuth({ children }) {
 }
 
 function PublicOnly({ children }) {
-  const { user, loading } = useAuth()
+  const { user, authReady } = useAuth()
 
-  if (loading) {
+  if (!authReady) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 size={28} className="animate-spin text-brand-400" />
@@ -64,4 +64,3 @@ export default function App() {
     </BrowserRouter>
   )
 }
-

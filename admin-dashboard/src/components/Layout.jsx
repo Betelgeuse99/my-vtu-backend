@@ -18,7 +18,6 @@ export default function Layout() {
 
   const handleLogout = () => {
     signOut()
-    navigate('/login')
   }
 
   const Sidebar = () => (

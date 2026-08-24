@@ -4,13 +4,11 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/Toast'
 import { Shield, ArrowRight, Loader2, Mail, Lock } from 'lucide-react'
 
-const API_BASE = import.meta.env.VITE_API_URL || ''
-
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const { signInWithToken } = useAuth()
+  const { signIn } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
 
@@ -22,44 +20,8 @@ export default function Login() {
 
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password: password.trim() })
-      })
-
-      if (!res.ok) {
-        const text = await res.text()
-        let msg = 'Login failed'
-        try { msg = JSON.parse(text).message || msg } catch {}
-        throw new Error(msg)
-      }
-
-      const json = await res.json()
-
-      if (!json.success) {
-        throw new Error(json.message || 'Login failed')
-      }
-
-      const sessionToken = json.session?.access_token
-      if (!sessionToken) {
-        throw new Error('No session token returned — check your credentials')
-      }
-
-      // Verify admin access
-      const adminRes = await fetch(`${API_BASE}/api/v2/admin/stats`, {
-        headers: { Authorization: `Bearer ${sessionToken}` }
-      })
-
-      if (!adminRes.ok) {
-        const adminText = await adminRes.text()
-        let adminMsg = 'Your account does not have admin access'
-        try { adminMsg = JSON.parse(adminText).message || adminMsg } catch {}
-        throw new Error(adminMsg)
-      }
-
-      signInWithToken(sessionToken, json.session?.refresh_token)
-      toast.success(`Welcome back, ${json.user?.full_name || 'Admin'}!`)
+      const result = await signIn(email.trim(), password.trim())
+      toast.success(`Welcome back, ${result.user?.full_name || 'Admin'}!`)
       navigate('/')
     } catch (err) {
       toast.error(err.message || 'Login failed')
