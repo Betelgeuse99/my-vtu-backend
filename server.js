@@ -1580,31 +1580,36 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
 // exactly what the server's own client returns, errors included.
 app.get("/api/v2/admin/keycheck", requireAdmin, async (_req, res) => {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const fp = key.slice(-12);
   let role = "unknown";
   try {
     role = JSON.parse(Buffer.from(key.split(".")[1], "base64").toString()).role || "unknown";
   } catch { role = "malformed"; }
 
-  const probe = {};
+  // Raw PostgREST call with explicit headers — no supabase-js involved
+  let raw = null;
   try {
-    const r = await supabase.from("profiles").select("id", { count: "exact", head: true });
-    probe.profiles = { count: r.count, error: r.error?.message || null };
-  } catch (e) { probe.profiles = { threw: e.message }; }
-  try {
-    const r = await supabase.from("wallets").select("user_id, balance").limit(5);
-    probe.wallets = { rows: r.data?.length ?? null, sample: r.data?.slice(0, 2) || null, error: r.error?.message || null };
-  } catch (e) { probe.wallets = { threw: e.message }; }
-  try {
-    const r = await supabase.from("transactions").select("id", { count: "exact", head: true });
-    probe.transactions = { count: r.count, error: r.error?.message || null };
-  } catch (e) { probe.transactions = { threw: e.message }; }
+    const r = await axios.get(`${process.env.SUPABASE_URL}/rest/v1/transactions`, {
+      params: { select: "id" },
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      timeout: 15000,
+    });
+    raw = {
+      status: r.status,
+      rows: Array.isArray(r.data) ? r.data.length : null,
+      content_range: r.headers["content-range"] || null,
+    };
+  } catch (e) {
+    raw = { error: e.response?.status || e.message };
+  }
 
   res.json({
     success: true,
     url_host: (() => { try { return new URL(process.env.SUPABASE_URL).host } catch { return null } })(),
-    key_present: !!key,
+    key_fingerprint: fp,
     key_role: role,
-    probes: probe,
+    raw_postgrest_transactions: raw,
+    probes: {},
   });
 });
 
