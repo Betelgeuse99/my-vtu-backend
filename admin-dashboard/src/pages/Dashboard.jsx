@@ -238,13 +238,13 @@ export default function Dashboard() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase tracking-wider">
-                <th className="px-5 py-3">Service</th>
-                <th className="px-5 py-3">User</th>
-                <th className="px-5 py-3">Phone / Recipient</th>
-                <th className="px-5 py-3 text-right">Amount</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Provider</th>
-                <th className="px-5 py-3">Date</th>
+                <th className="px-4 py-2.5">Service</th>
+                <th className="px-4 py-2.5">User</th>
+                <th className="px-4 py-2.5">Phone</th>
+                <th className="px-4 py-2.5 text-right">Amount</th>
+                <th className="px-4 py-2.5">Status</th>
+                <th className="px-4 py-2.5">Provider</th>
+                <th className="px-4 py-2.5">Date</th>
               </tr>
             </thead>
             <tbody>
@@ -259,23 +259,27 @@ export default function Dashboard() {
               ) : (
                 recent.map(tx => (
                   <tr key={tx.id} className="table-row">
-                    <td className="px-5 py-3">
-                      <p className="font-medium text-gray-200 capitalize">{tx.service_type || '—'}</p>
-                      <p className="text-xs text-gray-500 truncate max-w-[180px]">{tx.title}</p>
+                    <td className="px-4 py-2.5">
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-200 capitalize">{tx.service_type || '—'}</p>
+                        <p className="text-xs text-gray-500 truncate max-w-[150px]">{tx.title}</p>
+                      </div>
                     </td>
-                    <td className="px-5 py-3">
-                      <p className="text-gray-300 text-xs">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
-                      <p className="text-xs text-gray-600 break-all">{tx.profiles?.email || ''}</p>
+                    <td className="px-4 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-gray-300 text-xs truncate max-w-[160px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
+                        <p className="text-xs text-gray-600 truncate max-w-[220px]">{tx.profiles?.email || ''}</p>
+                      </div>
                     </td>
-                    <td className="px-5 py-3 text-xs text-gray-300 whitespace-nowrap">{tx.recipient || '—'}</td>
-                    <td className="px-5 py-3 text-right font-mono text-gray-200">
+                    <td className="px-4 py-2.5 text-xs text-gray-300 whitespace-nowrap">{tx.recipient || '—'}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-gray-200 whitespace-nowrap">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
-                    <td className="px-5 py-3">{statusBadge(tx.status)}</td>
-                    <td className="px-5 py-3">
+                    <td className="px-4 py-2.5">{statusBadge(tx.status)}</td>
+                    <td className="px-4 py-2.5">
                       <CarrierBadge provider={tx.provider} />
                     </td>
-                    <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
+                    <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
                       {tx.created_at ? new Date(tx.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
                     </td>
                   </tr>

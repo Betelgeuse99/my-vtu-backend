@@ -143,51 +143,51 @@ export default function Transactions() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase tracking-wider">
-                <th className="px-5 py-3">Service</th>
-                <th className="px-5 py-3">User</th>
-                <th className="px-5 py-3">Phone / Recipient</th>
-                <th className="px-5 py-3 text-right">Amount</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Reference</th>
-                <th className="px-5 py-3">Date</th>
-                <th className="px-5 py-3 text-right">Action</th>
+                <th className="px-3 py-2.5">Service</th>
+                <th className="px-3 py-2.5">User</th>
+                <th className="px-3 py-2.5">Phone</th>
+                <th className="px-3 py-2.5 text-right">Amount</th>
+                <th className="px-3 py-2.5">Status</th>
+                <th className="px-3 py-2.5">Reference</th>
+                <th className="px-3 py-2.5">Date</th>
+                <th className="px-3 py-2.5 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading && txns.length === 0 ? (
-                <tr><td colSpan={8} className="px-5 py-12 text-center text-gray-500">
+                <tr><td colSpan={8} className="px-3 py-12 text-center text-gray-500">
                   <Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-400" /> Loading…
                 </td></tr>
               ) : txns.length === 0 ? (
-                <tr><td colSpan={8} className="px-5 py-12 text-center text-gray-500">No transactions found</td></tr>
+                <tr><td colSpan={8} className="px-3 py-12 text-center text-gray-500">No transactions found</td></tr>
               ) : (
                 txns.map(tx => (
                   <tr key={tx.id} className="table-row">
-                    <td className="px-5 py-3">
-                      <div>
+                    <td className="px-3 py-2.5">
+                      <div className="min-w-0">
                         <p className="font-medium text-gray-200 capitalize">{tx.service_type || '—'}</p>
-                        <p className="text-xs text-gray-500 truncate max-w-[150px]">{tx.title}</p>
-                        <div className="mt-1">
-                          <CarrierBadge provider={tx.provider} />
-                        </div>
+                        <p className="text-xs text-gray-500 truncate max-w-[130px]">{tx.title}</p>
+                        <div className="mt-0.5"><CarrierBadge provider={tx.provider} /></div>
                       </div>
                     </td>
-                    <td className="px-5 py-3">
-                      <p className="text-gray-300 text-xs">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
-                      <p className="text-xs text-gray-600 break-all">{tx.profiles?.email || ''}</p>
+                    <td className="px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-gray-300 text-xs truncate max-w-[150px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
+                        <p className="text-xs text-gray-600 truncate max-w-[210px]">{tx.profiles?.email || ''}</p>
+                      </div>
                     </td>
-                    <td className="px-5 py-3 text-xs text-gray-300 whitespace-nowrap">{tx.recipient || '—'}</td>
-                    <td className="px-5 py-3 text-right font-mono text-gray-200">
+                    <td className="px-3 py-2.5 text-xs text-gray-300 whitespace-nowrap">{tx.recipient || '—'}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-gray-200 whitespace-nowrap">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
-                    <td className="px-5 py-3">{statusBadge(tx.status)}</td>
-                    <td className="px-5 py-3 text-xs text-gray-500 font-mono truncate max-w-[130px]">{tx.reference || '—'}</td>
-                    <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtDate(tx.created_at)}</td>
-                    <td className="px-5 py-3 text-right">
+                    <td className="px-3 py-2.5">{statusBadge(tx.status)}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-500 font-mono truncate max-w-[120px]">{tx.reference || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{fmtDate(tx.created_at)}</td>
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap">
                       {(tx.status === 'successful' || tx.status === 'failed') && tx.service_type !== 'funding' && tx.service_type !== 'admin_adjust' && tx.service_type !== 'refund' ? (
                         <button
                           onClick={() => { setRefundTx(tx); setRefundReason('') }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-all"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-all"
                         >
                           <RotateCcw size={12} /> Refund
                         </button>

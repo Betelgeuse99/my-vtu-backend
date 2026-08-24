@@ -1,21 +1,30 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import axios from 'axios'
 
 const AuthContext = createContext(null)
 
 const STORAGE_KEY = 'dreamhatcher.admin.session'
 
-export function readStoredSession() {
+/** Reads the stored session WITHOUT the expiry check (used to decide whether a refresh is possible). */
+export function readStoredSessionRaw() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (!parsed?.access_token) return null
-    const expiresAt = parsed.expires_at || 0
-    if (expiresAt * 1000 < Date.now()) return null
     return parsed
   } catch {
     return null
   }
+}
+
+/** Returns the stored session only when it has not expired yet. */
+export function readStoredSession() {
+  const parsed = readStoredSessionRaw()
+  if (!parsed) return null
+  const expiresAt = parsed.expires_at || 0
+  if (expiresAt * 1000 < Date.now()) return null
+  return parsed
 }
 
 export function writeStoredSession(session) {
@@ -31,8 +40,43 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    setSession(readStoredSession())
+    let cancelled = false
+    const stored = readStoredSession()
+    if (stored) {
+      setSession(stored)
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+
+    // Stored session expired (or missing) — if a refresh token exists, renew
+    // silently instead of forcing a login. Fixes being logged out after the
+    // ~1h access-token lifetime on a page reload.
+    const raw = readStoredSessionRaw()
+    if (raw?.refresh_token) {
+      const API_BASE = import.meta.env.VITE_API_BASE || ''
+      axios.post(`${API_BASE}/auth/refresh`, { refresh_token: raw.refresh_token })
+        .then((res) => {
+          if (cancelled) return
+          if (res.data?.success && res.data.session?.access_token) {
+            const s = {
+              access_token: res.data.session.access_token,
+              refresh_token: res.data.session.refresh_token || raw.refresh_token,
+              expires_at: res.data.session.expires_at || Math.floor(Date.now() / 1000) + 3600,
+              user: raw.user || {},
+            }
+            writeStoredSession(s)
+            setSession(s)
+          } else {
+            clearStoredSession()
+          }
+        })
+        .catch(() => { if (!cancelled) clearStoredSession() })
+        .finally(() => { if (!cancelled) setLoading(false) })
+      return () => { cancelled = true }
+    }
+
     setLoading(false)
+    return () => { cancelled = true }
   }, [])
 
   const user = session ? {

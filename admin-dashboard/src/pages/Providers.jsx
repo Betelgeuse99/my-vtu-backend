@@ -181,7 +181,7 @@ export default function Providers() {
           {/* Per-Service Overrides */}
           <div>
             <h2 className="text-base font-semibold text-gray-100 mb-3">Per-Service Overrides</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               {VALID_SERVICES.map(svc => (
                 <ServiceCard
                   key={svc}
