@@ -26,6 +26,22 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// Startup check: decode the role claim of the configured service key.
+// A pasted anon key here silently hides transactions/wallets behind RLS —
+// this makes that failure loud at boot instead of invisible in prod.
+(() => {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  let role = "missing";
+  try {
+    role = JSON.parse(Buffer.from(key.split(".")[1], "base64").toString()).role || "unknown";
+  } catch { role = "malformed"; }
+  if (role !== "service_role") {
+    console.error(`🚨🚨 SUPABASE_SERVICE_ROLE_KEY has role="${role}" — expected "service_role". Transactions/wallets WILL be hidden by RLS. Fix the env var in your hosting dashboard and redeploy.`);
+  } else {
+    console.log("✅ SUPABASE_SERVICE_ROLE_KEY verified (role=service_role)");
+  }
+})();
+
 const BIGISUB_BASE_URL = "https://api.bigisub.ng";
 const BIGISUB_TOKEN = process.env.BIGISUB_TOKEN || process.env.BIGISUB_API_KEY;
 const DEFAULT_PIN = process.env.BIGISUB_PIN || "1234";
@@ -1558,6 +1574,17 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
 // -------------------------------------------------------------
 // 5. ADMIN ENDPOINTS (require is_admin profile)
 // -------------------------------------------------------------
+
+// GET /api/v2/admin/keycheck — reports the role claim of the key this
+// server is actually using. Definitive diagnosis for RLS-blindness.
+app.get("/api/v2/admin/keycheck", requireAdmin, (_req, res) => {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  let role = "unknown";
+  try {
+    role = JSON.parse(Buffer.from(key.split(".")[1], "base64").toString()).role || "unknown";
+  } catch { role = "malformed"; }
+  res.json({ success: true, key_present: !!key, key_role: role });
+});
 
 async function requireAdmin(req, res, next) {
   try {
