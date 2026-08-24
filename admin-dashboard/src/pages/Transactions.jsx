@@ -19,6 +19,7 @@ export default function Transactions() {
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const pageRef = useRef(1)
+  const mountedRef = useRef(true)
 
   // Refund state
   const [refundTx, setRefundTx] = useState(null)
@@ -31,21 +32,30 @@ export default function Transactions() {
     setLoading(true)
     try {
       const res = await api.getTransactions(page, 25, { status: statusFilter, service_type: typeFilter })
+      if (!mountedRef.current) return
       setTxns(res.data || [])
       setPagination(res.pagination)
       pageRef.current = page
     } catch (err) {
+      if (!mountedRef.current) return
+      // Keep existing txns on error — never clear the table
       if (toast) toast.error(err.message)
     } finally {
-      setLoading(false)
+      if (mountedRef.current) setLoading(false)
     }
   }, [statusFilter, typeFilter, toast])
 
-  useEffect(() => { fetchTxns(1) }, [fetchTxns])
-
-  // Auto-refresh every 20 seconds so the transaction list stays live
   useEffect(() => {
-    const timer = setInterval(() => fetchTxns(pageRef.current), 20_000)
+    mountedRef.current = true
+    fetchTxns(1)
+    return () => { mountedRef.current = false }
+  }, [fetchTxns])
+
+  // Auto-refresh every 20 seconds — only refresh current page, never reset to page 1
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (mountedRef.current) fetchTxns(pageRef.current)
+    }, 20_000)
     return () => clearInterval(timer)
   }, [fetchTxns])
 
@@ -127,7 +137,7 @@ export default function Transactions() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
+              {loading && txns.length === 0 ? (
                 <tr><td colSpan={7} className="px-5 py-12 text-center text-gray-500">
                   <Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-400" /> Loading…
                 </td></tr>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../components/Toast'
-import { Wallet, Users, ArrowLeftRight, TrendingDown, Loader2, RefreshCw, Zap, Wifi, Tv, Lightbulb, GraduationCap } from 'lucide-react'
+import { Wallet, Users, ArrowLeftRight, TrendingDown, Loader2, RefreshCw, Zap, Wifi, Tv, Lightbulb, GraduationCap, AlertTriangle } from 'lucide-react'
 
 const serviceIcons = {
   airtime: Zap,
@@ -49,28 +49,39 @@ function ProviderBadge({ provider }) {
 
 const CACHE_KEY = 'dht_dashboard_cache'
 
-// Zero-fallback so the dashboard never stays blank if the first fetch fails.
-const fallbackStats = {
-  balances: { bigisub: 0, alrahuz: 0 },
-  total_wallet_liability: 0,
-  total_registered_users: 0,
-  total_transactions: 0,
-  active_routes: {}
-}
-
 function readCache() {
   try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null') } catch { return null }
 }
 
+function writeCache(data) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)) } catch { /* ignore */ }
+}
+
 export default function Dashboard() {
   const toast = useToast()
-  const cachedRef = useRef(readCache())
-  const cached = cachedRef.current
 
-  const [stats, setStats] = useState(cached?.stats || fallbackStats)
-  const [providers, setProviders] = useState(cached?.providers || null)
-  const [recent, setRecent] = useState(cached?.recent || [])
-  const [loading, setLoading] = useState(!cached?.stats)
+  // Persistent data store — lives in a ref so the fetch callback always reads
+  // the latest value without needing it as a dependency. Data is NEVER set to
+  // null/undefined once it has been loaded.
+  const dataRef = useRef({
+    stats: readCache()?.stats || {
+      balances: { bigisub: 0, alrahuz: 0 },
+      total_wallet_liability: 0,
+      total_registered_users: 0,
+      total_transactions: 0,
+      active_routes: {}
+    },
+    providers: readCache()?.providers || null,
+    recent: readCache()?.recent || [],
+  })
+
+  // Force-reactive copy for rendering
+  const [renderTick, setRenderTick] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [sessionExpired, setSessionExpired] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState(null)
+
+  const bump = useCallback(() => setRenderTick(t => t + 1), [])
 
   const fetchStats = useCallback(async () => {
     setLoading(true)
@@ -81,44 +92,66 @@ export default function Dashboard() {
         api.getTransactions(1, 8),
       ])
 
-      // Stats — only update if the response actually contains data
+      let anySuccess = false
+
+      // Stats — merge into existing, never overwrite with undefined/null
       if (statsRes.status === 'fulfilled' && statsRes.value?.data) {
-        const newData = statsRes.value.data
-        setStats(prev => ({ ...prev, ...newData }))
-        try {
-          localStorage.setItem(CACHE_KEY, JSON.stringify({
-            stats: newData,
-            recent: txRes.status === 'fulfilled' ? (txRes.value?.data || []) : [],
-          }))
-        } catch { /* storage full/unavailable — ignore */ }
+        const d = statsRes.value.data
+        dataRef.current.stats = { ...dataRef.current.stats, ...d }
+        anySuccess = true
       }
 
       // Providers
       if (providersRes.status === 'fulfilled' && providersRes.value?.data) {
-        setProviders(providersRes.value.data)
+        dataRef.current.providers = providersRes.value.data
+        anySuccess = true
       }
 
-      // Recent transactions — always update when the call succeeds
+      // Recent transactions — always replace on success (empty array is valid)
       if (txRes.status === 'fulfilled') {
-        setRecent(txRes.value?.data || [])
+        dataRef.current.recent = txRes.value?.data || []
+        anySuccess = true
       }
+
+      if (anySuccess) {
+        setLastUpdated(new Date())
+        writeCache({
+          stats: dataRef.current.stats,
+          recent: dataRef.current.recent,
+        })
+      }
+
+      // Check if ALL three failed due to auth — signal session expiry
+      const allRejected = [statsRes, providersRes, txRes].every(r => r.status === 'rejected')
+      if (allRejected) {
+        const reason = statsRes.reason?.message || ''
+        if (reason.includes('sign in') || reason.includes('expired') || !api.isSessionValid) {
+          setSessionExpired(true)
+        }
+      } else {
+        setSessionExpired(false)
+      }
+
+      bump()
     } catch (err) {
-      // Never leave the dashboard completely blank — keep whatever was showing
       console.error('Dashboard fetch error:', err)
       if (toast) toast.error(err.message || 'Failed to refresh dashboard data')
     } finally {
       setLoading(false)
     }
-  }, [toast])
+  }, [toast, bump])
 
-  // Initial fetch
+  // Initial fetch on mount
   useEffect(() => { fetchStats() }, [fetchStats])
 
-  // Auto-refresh every 15 seconds — keeps the dashboard live without hammering the server
+  // Auto-refresh every 15 seconds
   useEffect(() => {
     const timer = setInterval(fetchStats, 15_000)
     return () => clearInterval(timer)
   }, [fetchStats])
+
+  // Render from ref — the ref ALWAYS has data (never null)
+  const { stats, providers, recent } = dataRef.current
 
   const fmt = (n) => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })
 
@@ -137,141 +170,150 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-gray-100">Dashboard</h1>
           <p className="text-sm text-gray-500 mt-1">Platform overview and provider status</p>
         </div>
-        <button onClick={fetchStats} className="btn-secondary" disabled={loading}>
-          <RefreshCw size={14} className={loading ? 'animate-spin' : '' } />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {lastUpdated && (
+            <span className="text-xs text-gray-600">
+              Updated {lastUpdated.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+          <button onClick={fetchStats} className="btn-secondary" disabled={loading}>
+            <RefreshCw size={14} className={loading ? 'animate-spin' : '' } />
+            Refresh
+          </button>
+        </div>
       </div>
 
-      {loading && !stats ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={28} className="animate-spin text-brand-400" />
+      {sessionExpired && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-amber-500/30 bg-amber-500/10">
+          <AlertTriangle size={18} className="text-amber-400 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm text-amber-300 font-medium">Session expired</p>
+            <p className="text-xs text-amber-400/70 mt-0.5">Showing cached data. Please sign in again for live updates.</p>
+          </div>
         </div>
-      ) : stats ? (
-        <>
-          {/* Provider Balance Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            <StatCard
-              icon={Wallet}
-              label="Bigisub Balance"
-              value={'₦' + Number(stats.balances?.bigisub || 0).toLocaleString('en-NG')}
-              color="bg-brand-600/15 text-brand-400"
-              sub="Bigisub vendor credit"
-            />
-            <StatCard
-              icon={Wallet}
-              label="Alrahuz Balance"
-              value={'₦' + Number(stats.balances?.alrahuz || 0).toLocaleString('en-NG')}
-              color="bg-purple-500/15 text-purple-400"
-              sub="Alrahuz data vendor credit"
-            />
-            <StatCard
-              icon={TrendingDown}
-              label="Total Wallet Liability"
-              value={fmt(stats.total_wallet_liability)}
-              color="bg-amber-500/15 text-amber-400"
-              sub="Sum of all user balances"
-            />
-            <StatCard
-              icon={Users}
-              label="Registered Users"
-              value={Number(stats.total_registered_users || 0).toLocaleString()}
-              color="bg-emerald-500/15 text-emerald-400"
-            />
-          </div>
+      )}
 
-          {/* Active Provider Routes */}
-          <div className="card">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-100">Active Provider Routes</h2>
-                <p className="text-sm text-gray-500">Which provider handles each service</p>
+      {/* Provider Balance Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard
+          icon={Wallet}
+          label="Bigisub Balance"
+          value={'₦' + Number(stats.balances?.bigisub || 0).toLocaleString('en-NG')}
+          color="bg-brand-600/15 text-brand-400"
+          sub="Bigisub vendor credit"
+        />
+        <StatCard
+          icon={Wallet}
+          label="Alrahuz Balance"
+          value={'₦' + Number(stats.balances?.alrahuz || 0).toLocaleString('en-NG')}
+          color="bg-purple-500/15 text-purple-400"
+          sub="Alrahuz data vendor credit"
+        />
+        <StatCard
+          icon={TrendingDown}
+          label="Total Wallet Liability"
+          value={fmt(stats.total_wallet_liability)}
+          color="bg-amber-500/15 text-amber-400"
+          sub="Sum of all user balances"
+        />
+        <StatCard
+          icon={Users}
+          label="Registered Users"
+          value={Number(stats.total_registered_users || 0).toLocaleString()}
+          color="bg-emerald-500/15 text-emerald-400"
+        />
+      </div>
+
+      {/* Active Provider Routes */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-100">Active Provider Routes</h2>
+            <p className="text-sm text-gray-500">Which provider handles each service</p>
+          </div>
+          <ArrowLeftRight size={20} className="text-gray-600" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {Object.entries(stats.active_routes || providers || {}).map(([svc, prov]) => {
+            const Icon = serviceIcons[svc] || Zap
+            return (
+              <div key={svc} className="flex items-center gap-3 p-3 rounded-xl bg-gray-800/40 border border-gray-800">
+                <div className="p-2 rounded-lg bg-gray-700/50">
+                  <Icon size={16} className="text-gray-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-gray-500">{serviceLabels[svc] || svc}</p>
+                  <ProviderBadge provider={prov} />
+                </div>
               </div>
-              <ArrowLeftRight size={20} className="text-gray-600" />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-              {Object.entries(stats.active_routes || providers || {}).map(([svc, prov]) => {
-                const Icon = serviceIcons[svc] || Zap
-                return (
-                  <div key={svc} className="flex items-center gap-3 p-3 rounded-xl bg-gray-800/40 border border-gray-800">
-                    <div className="p-2 rounded-lg bg-gray-700/50">
-                      <Icon size={16} className="text-gray-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-gray-500">{serviceLabels[svc] || svc}</p>
-                      <ProviderBadge provider={prov} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+            )
+          })}
+        </div>
+      </div>
 
-          {/* Quick Stats Row */}
-          <div className="card">
-            <p className="text-sm text-gray-500">
-              Total Transactions:{' '}
-              <span className="text-gray-200 font-semibold">
-                {Number(stats.total_transactions || 0).toLocaleString()}
-              </span>
-            </p>
-          </div>
+      {/* Quick Stats Row */}
+      <div className="card">
+        <p className="text-sm text-gray-500">
+          Total Transactions:{' '}
+          <span className="text-gray-200 font-semibold">
+            {Number(stats.total_transactions || 0).toLocaleString()}
+          </span>
+        </p>
+      </div>
 
-          {/* Recent Transactions */}
-          <div className="card overflow-hidden !p-0">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
-              <div>
-                <h2 className="text-base font-semibold text-gray-100">Recent Transactions</h2>
-                <p className="text-xs text-gray-500 mt-0.5">Latest activity across the platform</p>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase tracking-wider">
-                    <th className="px-5 py-3">Service</th>
-                    <th className="px-5 py-3">User</th>
-                    <th className="px-5 py-3 text-right">Amount</th>
-                    <th className="px-5 py-3">Status</th>
-                    <th className="px-5 py-3">Provider</th>
-                    <th className="px-5 py-3">Date</th>
+      {/* Recent Transactions */}
+      <div className="card overflow-hidden !p-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+          <div>
+            <h2 className="text-base font-semibold text-gray-100">Recent Transactions</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Latest activity across the platform</p>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase tracking-wider">
+                <th className="px-5 py-3">Service</th>
+                <th className="px-5 py-3">User</th>
+                <th className="px-5 py-3 text-right">Amount</th>
+                <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Provider</th>
+                <th className="px-5 py-3">Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.length === 0 ? (
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-gray-500 text-sm">No transactions yet</td></tr>
+              ) : (
+                recent.map(tx => (
+                  <tr key={tx.id} className="table-row">
+                    <td className="px-5 py-3">
+                      <p className="font-medium text-gray-200 capitalize">{tx.service_type || '—'}</p>
+                      <p className="text-xs text-gray-500 truncate max-w-[180px]">{tx.title}</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <p className="text-gray-300 text-xs">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
+                      <p className="text-xs text-gray-600 truncate max-w-[140px]">{tx.profiles?.email}</p>
+                    </td>
+                    <td className="px-5 py-3 text-right font-mono text-gray-200">
+                      ₦{Number(tx.amount || 0).toLocaleString()}
+                    </td>
+                    <td className="px-5 py-3">{statusBadge(tx.status)}</td>
+                    <td className="px-5 py-3">
+                      {tx.provider
+                        ? <span className={`text-xs font-medium ${tx.provider === 'alrahuz' ? 'text-purple-400' : 'text-brand-400'}`}>{tx.provider}</span>
+                        : <span className="text-xs text-gray-600">—</span>}
+                    </td>
+                    <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
+                      {tx.created_at ? new Date(tx.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {recent.length === 0 ? (
-                    <tr><td colSpan={6} className="px-5 py-8 text-center text-gray-500 text-sm">No transactions yet</td></tr>
-                  ) : (
-                    recent.map(tx => (
-                      <tr key={tx.id} className="table-row">
-                        <td className="px-5 py-3">
-                          <p className="font-medium text-gray-200 capitalize">{tx.service_type || '—'}</p>
-                          <p className="text-xs text-gray-500 truncate max-w-[180px]">{tx.title}</p>
-                        </td>
-                        <td className="px-5 py-3">
-                          <p className="text-gray-300 text-xs">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
-                          <p className="text-xs text-gray-600 truncate max-w-[140px]">{tx.profiles?.email}</p>
-                        </td>
-                        <td className="px-5 py-3 text-right font-mono text-gray-200">
-                          ₦{Number(tx.amount || 0).toLocaleString()}
-                        </td>
-                        <td className="px-5 py-3">{statusBadge(tx.status)}</td>
-                        <td className="px-5 py-3">
-                          {tx.provider
-                            ? <span className={`text-xs font-medium ${tx.provider === 'alrahuz' ? 'text-purple-400' : 'text-brand-400'}`}>{tx.provider}</span>
-                            : <span className="text-xs text-gray-600">—</span>}
-                        </td>
-                        <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
-                          {tx.created_at ? new Date(tx.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      ) : null}
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

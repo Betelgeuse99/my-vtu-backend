@@ -9,6 +9,7 @@ class ApiClient {
   _token = localStorage.getItem('admin_token') || ''
   _refresh = localStorage.getItem('admin_refresh') || ''
   _refreshing = null
+  _lastRefreshFailed = false
 
   set token(t) {
     this._token = t
@@ -30,9 +31,14 @@ class ApiClient {
     return this._refresh
   }
 
+  get isSessionValid() {
+    return !this._lastRefreshFailed
+  }
+
   login(token, refreshToken) {
     this.token = token
     this.refresh = refreshToken || ''
+    this._lastRefreshFailed = false
   }
 
   logout() {
@@ -52,8 +58,10 @@ class ApiClient {
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        // Refresh token dead too — full re-login required
-        this.logout()
+        // Refresh failed — mark session invalid but DO NOT clear tokens.
+        // Clearing tokens would redirect to login and wipe the dashboard.
+        // The dashboard keeps showing cached data instead.
+        this._lastRefreshFailed = true
         throw new Error(json.message || 'Session expired — please sign in again')
       }
       this.login(json.session.access_token, json.session.refresh_token)
