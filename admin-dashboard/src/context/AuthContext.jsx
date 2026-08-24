@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 
 const AuthContext = createContext(null)
 
-const SUPABASE_STORAGE_KEY = 'sb-lraryzkamshicildghdv-auth-token'
+const STORAGE_KEY = 'sb-lraryzkamshicildghdv-auth-token'
 
 function decodeJwt(token) {
   try {
@@ -13,9 +13,27 @@ function decodeJwt(token) {
   } catch { return null }
 }
 
-function writeToSupabaseStorage(accessToken, refreshToken) {
+function buildSupabaseUser(jwtPayload, backendUser) {
+  return {
+    id: backendUser?.id || jwtPayload?.sub || '',
+    email: backendUser?.email || jwtPayload?.email || '',
+    aud: jwtPayload?.aud || 'authenticated',
+    role: jwtPayload?.role || 'authenticated',
+    app_metadata: {},
+    user_metadata: {
+      full_name: backendUser?.full_name || jwtPayload?.full_name || '',
+      ...(backendUser ? {} : {}),
+    },
+    identities: [],
+    created_at: '',
+    updated_at: '',
+  }
+}
+
+function writeToStorage(accessToken, refreshToken, backendUser) {
   const payload = decodeJwt(accessToken)
   const expiresAt = payload?.exp || Math.floor(Date.now() / 1000) + 3600
+  const user = buildSupabaseUser(payload, backendUser)
 
   const session = {
     access_token: accessToken,
@@ -23,9 +41,12 @@ function writeToSupabaseStorage(accessToken, refreshToken) {
     expires_in: 3600,
     expires_at: expiresAt,
     token_type: 'bearer',
+    provider_token: null,
+    provider_refresh_token: null,
+    user,
   }
 
-  localStorage.setItem(SUPABASE_STORAGE_KEY, JSON.stringify({
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
     current_session: session,
     expires_at: expiresAt,
   }))
@@ -33,8 +54,8 @@ function writeToSupabaseStorage(accessToken, refreshToken) {
   return session
 }
 
-function clearSupabaseStorage() {
-  localStorage.removeItem(SUPABASE_STORAGE_KEY)
+function clearStorage() {
+  localStorage.removeItem(STORAGE_KEY)
 }
 
 export function AuthProvider({ children }) {
@@ -88,18 +109,18 @@ export function AuthProvider({ children }) {
     const refreshToken = body.session?.refresh_token
     if (!accessToken) throw new Error('No session returned')
 
-    const s = writeToSupabaseStorage(accessToken, refreshToken)
+    const s = writeToStorage(accessToken, refreshToken, body.user)
     setSession(s)
-    setUser(decodeJwt(accessToken))
+    setUser(s.user)
 
     return body
   }, [])
 
   const signOut = useCallback(async () => {
-    clearSupabaseStorage()
+    clearStorage()
     setSession(null)
     setUser(null)
-    await supabase.auth.signOut()
+    try { await supabase.auth.signOut() } catch {}
   }, [])
 
   return (
