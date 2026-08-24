@@ -55,7 +55,7 @@ function getNetworkId(network) {
 }
 
 async function getBalance() {
-  const res = await apiClient.get("/api/user/");
+  const res = await apiClient.get("/api/user/", { timeout: 6000 });
   const body = res.data?.user || res.data;
   return Number(body?.wallet_balance ?? body?.balance ?? 0);
 }

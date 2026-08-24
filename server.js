@@ -1588,39 +1588,59 @@ async function requireAdmin(req, res, next) {
 }
 
 // GET /api/v2/admin/stats — dashboard summary with dual-provider balances + routes
+// Provider balances are cached for 60s: vendor APIs are slow/flaky from Render
+// and the dashboard polls every 15s — live-calling vendors per poll piles up
+// requests and kills the endpoint. Wallet liability / user counts come straight
+// from Postgres and are always fresh regardless of vendor health.
+
+const _statsBalanceCache = { data: null, ts: 0 };
+const STATS_BALANCE_TTL_MS = 60_000;
+
 app.get("/api/v2/admin/stats", requireAdmin, async (_req, res) => {
   try {
     // Fetch both provider balances in parallel — a provider failing must
-    // never take down the whole dashboard.
-    let bigisubBalance = 0;
-    let alrahuzBalance = 0;
-    const [bigiResult, alrahuzResult] = await Promise.allSettled([
-      (async () => {
-        // Correct route per Bigisub docs: /api/v2/financial/wallet/balance/
-        // (older builds used /api/v2/balance/ — kept as fallbacks)
-        try {
-          const r = await bigiClient.get("/api/v2/financial/wallet/balance/");
-          return Number(r.data?.data?.balance ?? r.data?.balance ?? 0);
-        } catch {
+    // never take down the whole dashboard. 6s hard timeout each so a dead
+    // vendor can never stall this endpoint.
+    const fetchBalances = async () => {
+      let bigisubBalance = 0;
+      let alrahuzBalance = 0;
+      const [bigiResult, alrahuzResult] = await Promise.allSettled([
+        (async () => {
           try {
-            const r = await bigiClient.get("/api/v2/balance/");
-            return Number(r.data?.balance ?? r.data?.data?.balance ?? 0);
+            const r = await bigiClient.get("/api/v2/financial/wallet/balance/", { timeout: 6000 });
+            return Number(r.data?.data?.balance ?? r.data?.balance ?? 0);
           } catch {
-            const r = await bigiClient.get("/api/balance/");
-            const raw = r.data?.balance ?? r.data?.data?.balance ?? (typeof r.data === "number" ? r.data : 0);
-            return Number(raw) || 0;
+            try {
+              const r = await bigiClient.get("/api/v2/balance/", { timeout: 6000 });
+              return Number(r.data?.balance ?? r.data?.data?.balance ?? 0);
+            } catch {
+              const r = await bigiClient.get("/api/balance/", { timeout: 6000 });
+              const raw = r.data?.balance ?? r.data?.data?.balance ?? (typeof r.data === "number" ? r.data : 0);
+              return Number(raw) || 0;
+            }
           }
-        }
-      })(),
-      (async () => {
-        try {
-          const alr = require("./services/alrahuz");
-          return await alr.getBalance();
-        } catch (e) { return 0; }
-      })()
-    ]);
-    if (bigiResult.status === "fulfilled") bigisubBalance = bigiResult.value;
-    if (alrahuzResult.status === "fulfilled") alrahuzBalance = alrahuzResult.value;
+        })(),
+        (async () => {
+          try {
+            const alr = require("./services/alrahuz");
+            return await alr.getBalance();
+          } catch (e) { return 0; }
+        })()
+      ]);
+      if (bigiResult.status === "fulfilled") bigisubBalance = bigiResult.value;
+      if (alrahuzResult.status === "fulfilled") alrahuzBalance = alrahuzResult.value;
+      return { bigisub: Number(bigisubBalance.toFixed(2)), alrahuz: Number(alrahuzBalance.toFixed(2)) };
+    };
+
+    let balances;
+    const now = Date.now();
+    if (_statsBalanceCache.data && now - _statsBalanceCache.ts < STATS_BALANCE_TTL_MS) {
+      balances = _statsBalanceCache.data;
+    } else {
+      balances = await fetchBalances();
+      _statsBalanceCache.data = balances;
+      _statsBalanceCache.ts = now;
+    }
 
     // Fetch active provider routes
     let activeRoutes = { airtime: "bigisub", data: "bigisub", cable: "bigisub", electricity: "bigisub", epin: "bigisub" };
@@ -1647,8 +1667,8 @@ app.get("/api/v2/admin/stats", requireAdmin, async (_req, res) => {
         // RAW NUMBERS — the dashboard formats them. Pre-formatted strings
         // like "1,234.00" become NaN when the UI runs Number() on them.
         balances: {
-          bigisub: Number(bigisubBalance.toFixed(2)),
-          alrahuz: Number(alrahuzBalance.toFixed(2))
+          bigisub: balances.bigisub,
+          alrahuz: balances.alrahuz
         },
         active_routes: activeRoutes,
         total_registered_users: totalUsers,
