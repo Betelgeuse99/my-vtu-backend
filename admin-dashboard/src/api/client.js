@@ -1,10 +1,14 @@
 // Centralized API client for the admin dashboard.
 // Reads the auth token from localStorage and forwards it on every request.
+// Handles Supabase's 1h access-token expiry transparently: a refresh token
+// is stored alongside and exchanged via /auth/refresh whenever a call 401s.
 
 const BASE = import.meta.env.VITE_API_BASE || ''
 
 class ApiClient {
   _token = localStorage.getItem('admin_token') || ''
+  _refresh = localStorage.getItem('admin_refresh') || ''
+  _refreshing = null
 
   set token(t) {
     this._token = t
@@ -16,7 +20,53 @@ class ApiClient {
     return this._token
   }
 
-  async _fetch(method, path, body, retries = 1) {
+  set refresh(t) {
+    this._refresh = t
+    if (t) localStorage.setItem('admin_refresh', t)
+    else localStorage.removeItem('admin_refresh')
+  }
+
+  get refresh() {
+    return this._refresh
+  }
+
+  login(token, refreshToken) {
+    this.token = token
+    this.refresh = refreshToken || ''
+  }
+
+  logout() {
+    this.token = ''
+    this.refresh = ''
+  }
+
+  /** Exchange the stored refresh token for a fresh session. */
+  async _doRefresh() {
+    if (!this._refresh) throw new Error('Session expired — please sign in again')
+    // Coalesce concurrent refreshes into one request
+    this._refreshing = this._refreshing || (async () => {
+      const res = await fetch(BASE + '/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: this._refresh }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        // Refresh token dead too — full re-login required
+        this.logout()
+        throw new Error(json.message || 'Session expired — please sign in again')
+      }
+      this.login(json.session.access_token, json.session.refresh_token)
+      return true
+    })()
+    try {
+      return await this._refreshing
+    } finally {
+      this._refreshing = null
+    }
+  }
+
+  async _fetch(method, path, body, retries = 1, refreshed = false) {
     const headers = { 'Content-Type': 'application/json' }
     if (this._token) headers['Authorization'] = `Bearer ${this._token}`
 
@@ -30,6 +80,13 @@ class ApiClient {
           headers,
           body: body ? JSON.stringify(body) : undefined,
         })
+
+        // Access token expired — refresh once and replay the request
+        if (res.status === 401 && !refreshed && this._refresh) {
+          await this._doRefresh()
+          return this._fetch(method, path, body, retries, true)
+        }
+
         const json = await res.json().catch(() => ({}))
         if (!res.ok) {
           if (attempt < retries && (res.status >= 500 || res.status === 429)) continue
@@ -37,15 +94,15 @@ class ApiClient {
         }
         return json
       } catch (err) {
-        if (attempt < retries && !(err instanceof Error && /^HTTP 4/.test(err.message))) continue
+        if (
+          attempt < retries &&
+          !(err instanceof Error && /^HTTP 4/.test(err.message)) &&
+          !(err instanceof Error && err.message.includes('sign in'))
+        ) continue
         throw err
       }
     }
   }
-
-  // Auth
-  login(token) { this.token = token }
-  logout()     { this.token = '' }
 
   // ── Admin endpoints ──────────────────────────────────────────
   getStats() {

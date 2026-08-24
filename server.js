@@ -445,6 +445,35 @@ app.post("/auth/verify-otp", async (req, res) => {
   }
 });
 
+// POST /auth/refresh — exchange a refresh token for a fresh session.
+// The admin dashboard stores this refresh token and calls this whenever its
+// access token (1h TTL) expires, so the session survives indefinitely with
+// activity instead of hard-failing after an hour.
+app.post("/auth/refresh", async (req, res) => {
+  const refreshToken = req.body.refresh_token;
+  if (!refreshToken) {
+    return res.status(400).json({ success: false, message: "refresh_token required" });
+  }
+  try {
+    const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
+    if (error || !data?.session) {
+      return res.status(401).json({ success: false, message: "Session expired — please sign in again" });
+    }
+    res.json({
+      success: true,
+      session: {
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        expires_at: data.session.expires_at
+      },
+      user: data.user ? { id: data.user.id, email: data.user.email } : null
+    });
+  } catch (err) {
+    console.error("❌ Token refresh error:", err.message);
+    res.status(500).json({ success: false, message: "Refresh failed" });
+  }
+});
+
 app.post("/auth/login", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const password = (req.body.password || "").trim();
@@ -1989,13 +2018,10 @@ const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || "http
 if (!process.env.DISABLE_KEEP_ALIVE) {
   const pingUrl = SELF_URL + "/health";
   console.log("♨️ Keep-warm active, pinging " + pingUrl + " every 10 min");
+  // Silent by design (matches the battle-tested dreamhatcher-backend pattern):
+  // a ping every 10 min must not flood the logs.
   setInterval(() => {
-    https.get(pingUrl, (response) => {
-      response.resume();
-      console.log("♨️ Keep-warm ping -> " + response.statusCode);
-    }).on("error", (err) => {
-      console.warn("⚠️ Keep-warm ping warning:", err.message);
-    });
+    https.get(pingUrl, (response) => response.resume()).on("error", () => {});
   }, 10 * 60 * 1000);
 }
 

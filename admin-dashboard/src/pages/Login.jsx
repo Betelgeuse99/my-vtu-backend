@@ -58,7 +58,7 @@ export default function Login() {
         throw new Error(adminMsg)
       }
 
-      signInWithToken(sessionToken)
+      signInWithToken(sessionToken, json.session?.refresh_token)
       toast.success(`Welcome back, ${json.user?.full_name || 'Admin'}!`)
       navigate('/')
     } catch (err) {
