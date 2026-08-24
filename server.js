@@ -44,6 +44,16 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({ verify: (req, _res, buf) => { req.rawBody = buf; } }));
 
+// Kill switch for hung requests: after 30s of no response, log loudly so we
+// can see WHICH endpoint stalls (e.g. a slow provider API) instead of the
+// request silently hanging until Render cuts it.
+app.use((req, res, next) => {
+  res.setTimeout(30000, () => {
+    console.error("⏰ Response timeout on " + req.method + " " + req.url);
+  });
+  next();
+});
+
 function getNetworkId(net) {
   // Bigisub network IDs, verified against the live API (2026-08-17):
   //   1 = MTN, 2 = GLO, 3 = AIRTEL, 4 = 9MOBILE
@@ -1971,12 +1981,18 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL;
-if (SELF_URL) {
+// KEEP-WARM: pings our own /health every 10 minutes so Render's free tier
+// never sleeps the service (a cold start takes 30-60s and makes the admin
+// dashboard look broken). RENDER_EXTERNAL_URL is set automatically by Render;
+// the hardcoded fallback covers manual deploys where it is missing.
+const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL || "https://dreamhatcher-paystack-backend.onrender.com";
+if (!process.env.DISABLE_KEEP_ALIVE) {
   const pingUrl = SELF_URL + "/health";
+  console.log("♨️ Keep-warm active, pinging " + pingUrl + " every 10 min");
   setInterval(() => {
     https.get(pingUrl, (response) => {
       response.resume();
+      console.log("♨️ Keep-warm ping -> " + response.statusCode);
     }).on("error", (err) => {
       console.warn("⚠️ Keep-warm ping warning:", err.message);
     });
