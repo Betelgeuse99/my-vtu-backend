@@ -1,29 +1,35 @@
-// API client that dynamically reads the Supabase access token from the
-// client-side Supabase session on every request. Handles 401s by
-// calling supabase.auth.refreshSession() and replaying the failed request.
-
-import { supabase } from '../lib/supabase'
+// API client that reads the Supabase access token from our persisted
+// session and uses the injected refreshSession function on 401.
 
 const BASE = import.meta.env.VITE_API_BASE || ''
 
+// Project ref for Supabase localStorage key
+const PROJECT_REF = 'lraryzkamshicildghdv'
+
+function getPersistedSession() {
+  try {
+    const raw = localStorage.getItem(`sb-${PROJECT_REF}-auth-token`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed.current_session || null
+  } catch { return null }
+}
+
+function getAccessToken() {
+  const s = getPersistedSession()
+  return s?.access_token || null
+}
+
 class ApiClient {
-  // No token state stored here — the source of truth is supabase.auth.getSession()
+  _refreshFn = null
 
-  async _getToken() {
-    const { data: { session } } = await supabase.auth.getSession()
-    return session?.access_token || null
+  /** Called by AuthContext after sign-in to inject the refresh function. */
+  setRefreshFunction(fn) {
+    this._refreshFn = fn
   }
 
-  async _doRefresh() {
-    const { data, error } = await supabase.auth.refreshSession()
-    if (error || !data?.session) {
-      throw new Error('Session expired — please sign in again')
-    }
-    return data.session.access_token
-  }
-
-  async _fetch(method, path, body, _retries = 1, _refreshed = false) {
-    const token = await this._getToken()
+  async _fetch(method, path, body) {
+    const token = getAccessToken()
     const headers = { 'Content-Type': 'application/json' }
     if (token) headers['Authorization'] = `Bearer ${token}`
 
@@ -33,23 +39,27 @@ class ApiClient {
       body: body ? JSON.stringify(body) : undefined,
     })
 
-    // 401 → refresh session once, then retry
-    if (res.status === 401 && !_refreshed) {
-      const newToken = await this._doRefresh()
-      const retryHeaders = { 'Content-Type': 'application/json' }
-      if (newToken) retryHeaders['Authorization'] = `Bearer ${newToken}`
+    // 401 → try refresh once, then retry the request
+    if (res.status === 401 && this._refreshFn) {
+      try {
+        const newToken = await this._refreshFn()
+        const retryHeaders = { 'Content-Type': 'application/json' }
+        if (newToken) retryHeaders['Authorization'] = `Bearer ${newToken}`
 
-      const retryRes = await fetch(BASE + path, {
-        method,
-        headers: retryHeaders,
-        body: body ? JSON.stringify(body) : undefined,
-      })
+        const retryRes = await fetch(BASE + path, {
+          method,
+          headers: retryHeaders,
+          body: body ? JSON.stringify(body) : undefined,
+        })
 
-      if (!retryRes.ok) {
-        const json = await retryRes.json().catch(() => ({}))
-        throw new Error(json.message || `HTTP ${retryRes.status}`)
+        if (!retryRes.ok) {
+          const json = await retryRes.json().catch(() => ({}))
+          throw new Error(json.message || `HTTP ${retryRes.status}`)
+        }
+        return retryRes.json()
+      } catch (err) {
+        throw err
       }
-      return retryRes.json()
     }
 
     if (!res.ok) {

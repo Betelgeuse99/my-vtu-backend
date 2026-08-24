@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ToastProvider } from './components/Toast'
+import { api } from './api/client'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -11,7 +13,11 @@ import Plans from './pages/Plans'
 import { Loader2 } from 'lucide-react'
 
 function RequireAuth({ children }) {
-  const { user, authReady } = useAuth()
+  const { user, authReady, refreshSession } = useAuth()
+
+  useEffect(() => {
+    if (refreshSession) api.setRefreshFunction(refreshSession)
+  }, [refreshSession])
 
   if (!authReady) {
     return (
