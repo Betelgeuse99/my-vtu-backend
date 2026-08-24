@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
@@ -18,6 +18,7 @@ export default function Transactions() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const pageRef = useRef(1)
 
   // Refund state
   const [refundTx, setRefundTx] = useState(null)
@@ -32,14 +33,21 @@ export default function Transactions() {
       const res = await api.getTransactions(page, 25, { status: statusFilter, service_type: typeFilter })
       setTxns(res.data || [])
       setPagination(res.pagination)
+      pageRef.current = page
     } catch (err) {
-      toast.error(err.message)
+      if (toast) toast.error(err.message)
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, typeFilter])
+  }, [statusFilter, typeFilter, toast])
 
-  useEffect(() => { fetchTxns(1) }, [statusFilter, typeFilter])
+  useEffect(() => { fetchTxns(1) }, [fetchTxns])
+
+  // Auto-refresh every 20 seconds so the transaction list stays live
+  useEffect(() => {
+    const timer = setInterval(() => fetchTxns(pageRef.current), 20_000)
+    return () => clearInterval(timer)
+  }, [fetchTxns])
 
   const handleRefund = async () => {
     if (!refundTx) return

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../components/Toast'
 import { Wallet, Users, ArrowLeftRight, TrendingDown, Loader2, RefreshCw, Zap, Wifi, Tv, Lightbulb, GraduationCap } from 'lucide-react'
@@ -49,7 +49,7 @@ function ProviderBadge({ provider }) {
 
 const CACHE_KEY = 'dht_dashboard_cache'
 
-// Zero‑fallback so the dashboard never stays blank if the first fetch fails.
+// Zero-fallback so the dashboard never stays blank if the first fetch fails.
 const fallbackStats = {
   balances: { bigisub: 0, alrahuz: 0 },
   total_wallet_liability: 0,
@@ -58,23 +58,21 @@ const fallbackStats = {
   active_routes: {}
 }
 
+function readCache() {
+  try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null') } catch { return null }
+}
+
 export default function Dashboard() {
-  // Seed from the last successful fetch (localStorage) so the numbers are
-  // ALWAYS visible — even right after login or when the Render service is
-  // cold-starting. Live data replaces it as soon as a fetch succeeds.
-  const cached = (() => {
-    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || 'null') } catch { return null }
-  })()
-  // Start with cached data; if nothing cached yet, use a zero‑fallback so the
-  // UI never stays blank while the first fetch is in flight.
+  const toast = useToast()
+  const cachedRef = useRef(readCache())
+  const cached = cachedRef.current
+
   const [stats, setStats] = useState(cached?.stats || fallbackStats)
   const [providers, setProviders] = useState(cached?.providers || null)
   const [recent, setRecent] = useState(cached?.recent || [])
-  // Loading only while the first fetch is pending; if we had no cache we still
-  // show the fallback zeros immediately so there’s no blank screen.
   const [loading, setLoading] = useState(!cached?.stats)
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     setLoading(true)
     try {
       const [statsRes, providersRes, txRes] = await Promise.allSettled([
@@ -83,38 +81,42 @@ export default function Dashboard() {
         api.getTransactions(1, 8),
       ])
 
-      // ── Stats ──────────────────────────────────────────────
-      if (statsRes.status === 'fulfilled') {
-        setStats(statsRes.value.data)
+      // Stats — only update if the response actually contains data
+      if (statsRes.status === 'fulfilled' && statsRes.value?.data) {
+        const newData = statsRes.value.data
+        setStats(prev => ({ ...prev, ...newData }))
         try {
           localStorage.setItem(CACHE_KEY, JSON.stringify({
-            stats: statsRes.value.data,
-            recent: txRes.status === 'fulfilled' ? (txRes.value.data || []) : [],
+            stats: newData,
+            recent: txRes.status === 'fulfilled' ? (txRes.value?.data || []) : [],
           }))
         } catch { /* storage full/unavailable — ignore */ }
-      } else if (!cached?.stats) {
-        // No cached fallback either — keep the zero‑fallback we already have
       }
 
-      // ── Providers ────────────────────────────────────────
-      if (providersRes.status === 'fulfilled') setProviders(providersRes.value.data)
+      // Providers
+      if (providersRes.status === 'fulfilled' && providersRes.value?.data) {
+        setProviders(providersRes.value.data)
+      }
 
-      // ── Recent transactions ──────────────────────────────
-      if (txRes.status === 'fulfilled') setRecent(txRes.value.data || [])
+      // Recent transactions — always update when the call succeeds
+      if (txRes.status === 'fulfilled') {
+        setRecent(txRes.value?.data || [])
+      }
     } catch (err) {
-      // Never leave the dashboard completely blank — keep cached or fallback
-      if (!cached?.stats) setStats(fallbackStats)
-      toast.error(err.message || 'Failed to load dashboard data')
+      // Never leave the dashboard completely blank — keep whatever was showing
+      console.error('Dashboard fetch error:', err)
+      if (toast) toast.error(err.message || 'Failed to refresh dashboard data')
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
 
-  useEffect(() => { fetchStats() }, [])
+  // Initial fetch
+  useEffect(() => { fetchStats() }, [fetchStats])
 
-  // Keep the dashboard numbers live: refresh every minute.
+  // Auto-refresh every 15 seconds — keeps the dashboard live without hammering the server
   useEffect(() => {
-    const timer = setInterval(fetchStats, 60_000)
+    const timer = setInterval(fetchStats, 15_000)
     return () => clearInterval(timer)
   }, [fetchStats])
 
