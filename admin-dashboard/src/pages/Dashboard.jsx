@@ -112,6 +112,12 @@ export default function Dashboard() {
 
   useEffect(() => { fetchStats() }, [])
 
+  // Keep the dashboard numbers live: refresh every minute.
+  useEffect(() => {
+    const timer = setInterval(fetchStats, 60_000)
+    return () => clearInterval(timer)
+  }, [fetchStats])
+
   const fmt = (n) => '₦' + Number(n || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })
 
   const statusBadge = (status) => {
