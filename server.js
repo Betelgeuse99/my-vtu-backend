@@ -865,26 +865,39 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
     }
 
     // Debit FIRST so an order can never be delivered without charging the
-    // user. Refunded automatically if Bigisub rejects the order below.
+    // user. Refunded automatically if the provider rejects the order below.
     const newBalance = await debitWallet(userId, price);
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
     // Stash the debit on the request so the catch block (which cannot see
-    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    // try-block consts) can refund the exact amount if the provider rejects it.
     req._debit = { userId: userId, price: price };
     const txRef = newTxRef("AIR");
 
-    const response = await bigiClient.post("/api/v2/vtu/airtime/purchase/", {
-      network: getNetworkId(network),
-      phone_number: String(phone_number).trim(),
-      amount: String(amount),
-      airtime_type: "vtu",
-      pin: DEFAULT_PIN
-    });
-    console.log("📦 AIRTIME raw response:", JSON.stringify(response.data));
+    // Route to the ACTIVE provider for airtime (provider_routing) — same as
+    // the data route. Never silently buy from Bigisub when Alrahuz is toggled.
+    const provider = await getActiveProvider("airtime");
 
-    if (bigiFailed(response.data)) {
+    let response;
+    if (provider === "alrahuz") {
+      response = await alrahuzService.buyAirtime({
+        network: network, // slug / app id — alrahuz.getNetworkId maps it
+        mobile_number: String(phone_number).trim(),
+        amount: price,
+      });
+    } else {
+      response = (await bigiClient.post("/api/v2/vtu/airtime/purchase/", {
+        network: getNetworkId(network),
+        phone_number: String(phone_number).trim(),
+        amount: String(amount),
+        airtime_type: "vtu",
+        pin: DEFAULT_PIN
+      })).data;
+    }
+    console.log("📦 AIRTIME raw response (" + provider + "):", JSON.stringify(response));
+
+    if (bigiFailed(response)) {
       // Order was not fulfilled — refund the debit and log the failure.
       await creditWallet(userId, price);
       await logTx({
@@ -899,10 +912,11 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
       });
       return res.status(400).json({
         success: false,
-        message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
+        message: bigiErrorMessage(response, provider === "alrahuz"
+          ? "Alrahuzdata rejected this purchase"
+          : "Bigisub rejected this purchase")
       });
     }
-
 
     await logTx({
       user_id: userId,
@@ -914,28 +928,28 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
       reference: txRef,
       provider: canonicalNetworkName(network)
     });
-    console.log("✅ Airtime: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    console.log("✅ Airtime (" + provider + "): user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     // reference is the idempotency key the app uses to find-and-patch this
     // row instead of inserting a duplicate.
-    res.json({ success: true, message: "Airtime top-up successful", data: response.data, balance: newBalance, reference: txRef });
+    res.json({ success: true, message: "Airtime top-up successful", data: response, balance: newBalance, reference: txRef });
   } catch (err) {
     console.error("❌ Airtime Error:", err.response?.data || err.message);
     // try-block consts are invisible to catch, so the debit context comes
     // from the request (stashed right after the debit succeeded).
     const ctx = req._debit || null;
-    const bigiStatus = err.response?.status || 0;
-    if (bigiStatus >= 400 && bigiStatus < 500) {
-      // Bigisub rejected the request outright (bad amount, bad phone, auth…)
+    const provStatus = err.response?.status || 0;
+    if (provStatus >= 400 && provStatus < 500) {
+      // The provider rejected the request outright (bad amount, bad phone, auth…)
       // — the order was NOT placed. Refund the debit so the user is never
       // charged for an order that didn't happen.
       if (ctx) {
         await creditWallet(ctx.userId, ctx.price);
       }
-      console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
+      console.error("❌ Order rejected by provider:", err.response?.data || err.message);
       return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
     }
-    // 5xx / timeout / connection error: Bigisub may STILL have processed the
-    // order (it has delivered airtime while returning "An error occurred…").
+    // 5xx / timeout / connection error: the provider may STILL have processed
+    // the order (it has delivered airtime while returning "An error occurred…").
     // We already debited, so keep the charge and let the user verify delivery
     // — refunding blindly would hand out free airtime.
     console.error("⚠️ Order outcome uncertain:", err.response?.data || err.message);
