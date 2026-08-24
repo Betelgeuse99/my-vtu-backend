@@ -2,16 +2,17 @@ import { useState, useEffect } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
-import { Loader2, RefreshCw, Zap, Wifi, Tv, Lightbulb, GraduationCap, ArrowRightLeft } from 'lucide-react'
+import { Loader2, RefreshCw, Zap, Wifi, Tv, Lightbulb, GraduationCap, CreditCard, ArrowRightLeft } from 'lucide-react'
 
-const VALID_SERVICES = ['airtime', 'data', 'cable', 'electricity', 'epin']
+const VALID_SERVICES = ['airtime', 'data', 'cable', 'electricity', 'epin', 'recharge_pin']
 
 const serviceConfig = {
-  airtime:     { icon: Zap,          label: 'Airtime',      desc: 'VTU top-ups' },
-  data:        { icon: Wifi,         label: 'Data Plans',   desc: 'Internet bundles' },
-  cable:       { icon: Tv,           label: 'Cable TV',     desc: 'DStv, GOtv, StarTimes' },
-  electricity: { icon: Lightbulb,    label: 'Electricity',  desc: 'Meter token payments' },
-  epin:        { icon: GraduationCap, label: 'Exam PINs',   desc: 'WAEC, NECO, NABTEB' },
+  airtime:      { icon: Zap,          label: 'Airtime',       desc: 'VTU top-ups' },
+  data:         { icon: Wifi,         label: 'Data Plans',    desc: 'Internet bundles' },
+  cable:        { icon: Tv,           label: 'Cable TV',      desc: 'DStv, GOtv, StarTimes' },
+  electricity:  { icon: Lightbulb,    label: 'Electricity',   desc: 'Meter token payments' },
+  epin:         { icon: GraduationCap, label: 'Exam PINs',    desc: 'WAEC, NECO, NABTEB' },
+  recharge_pin: { icon: CreditCard,   label: 'Recharge PINs', desc: 'VTU scratch cards' },
 }
 
 function ServiceCard({ service, current, onChange, loading }) {
@@ -199,7 +200,7 @@ export default function Providers() {
       <ConfirmModal
         open={!!confirmGlobal}
         title={`Switch All Services to ${confirmGlobal?.provider === 'bigisub' ? 'Bigisub' : 'Alrahuzdata'}?`}
-        message={`This will route ALL services (airtime, data, cable, electricity, exam PINs) through ${confirmGlobal?.provider === 'bigisub' ? 'Bigisub' : 'Alrahuzdata'}. Per-service overrides will be cleared.`}
+        message={`This will route ALL services (airtime, data, cable, electricity, exam PINs, recharge PINs) through ${confirmGlobal?.provider === 'bigisub' ? 'Bigisub' : 'Alrahuzdata'}. Per-service overrides will be cleared.`}
         confirmLabel="Switch All"
         loading={switching}
         onConfirm={() => handleGlobalSwitch(confirmGlobal.provider)}

@@ -197,6 +197,67 @@ async function buyData({ network, mobile_number, plan, Ported_number = true }) {
 }
 
 // ---------------------------------------------------------------------
+// RECHARGE PIN (VTU scratch card) SUPPORT — Alrahuz API: POST /api/rechargepin/
+//   { "network": network_id, "network_amount": <recharge_card_network_api_id>,
+//     "quantity": qty, "name_on_card": name }
+// There is NO website buy page for recharge cards — the only source for the
+// network_amount ids is the official "Recharge Card List" on
+// alrahuzdata.com.ng/documentation (verified against the live docs 2026-08-24):
+//   MTN (net 1): ₦100->13, ₦200->2, ₦500->3, ₦1000->20
+//   GLO (net 2): ₦100->4,  ₦200->5, ₦500->6, ₦1000->22
+//   9MOBILE (net 3): ₦100->7, ₦200->8
+//   AIRTEL (net 4): ₦100->10, ₦200->11, ₦500->12, ₦1000->21
+// Keyed by ALRAHUZ network id (1=MTN, 2=GLO, 3=9MOBILE, 4=AIRTEL).
+// ---------------------------------------------------------------------
+const RECHARGE_CARDS = {
+  1: { 100: 13, 200: 2, 500: 3, 1000: 20 },
+  2: { 100: 4, 200: 5, 500: 6, 1000: 22 },
+  3: { 100: 7, 200: 8 },
+  4: { 100: 10, 200: 11, 500: 12, 1000: 21 },
+};
+
+// Alrahuz network id -> the app's registry id (1=MTN, 2=AIRTEL, 3=GLO,
+// 4=9MOBILE), so the plans the app receives carry the app's network number
+// (the app's runtime guard cross-checks it against the requested network).
+const ALRAHUZ_NET_TO_APP_REG = { 1: 1, 2: 3, 3: 4, 4: 2 };
+
+/**
+ * Returns Alrahuz recharge-pin denominations for [network] (slug or app id),
+ * shaped like the Bigisub recharge-pin plans the app already renders:
+ *   { id: network_amount_id, network: appNetId, size, regular_price, corporate_price }
+ */
+function getRechargePinPlans(network) {
+  const netId = getNetworkId(network);
+  const cards = RECHARGE_CARDS[netId] || {};
+  return Object.entries(cards).map(([amount, id]) => ({
+    id,
+    network: ALRAHUZ_NET_TO_APP_REG[netId] ?? netId,
+    size: "₦" + amount,
+    regular_price: Number(amount),
+    corporate_price: Number(amount),
+    plan_amount: Number(amount),
+  }));
+}
+
+/** Resolves the denomination (₦) for a plan id, or null. */
+function resolveRechargePinAmount(network, planId) {
+  const netId = getNetworkId(network);
+  const cards = RECHARGE_CARDS[netId] || {};
+  const entry = Object.entries(cards).find(([, id]) => Number(id) === Number(planId));
+  return entry ? Number(entry[0]) : null;
+}
+
+async function buyRechargePin({ network, network_amount, quantity, name_on_card }) {
+  const res = await apiClient.post("/api/rechargepin/", {
+    network: getNetworkId(network),
+    network_amount: Number(network_amount),
+    quantity: Math.min(5, Math.max(1, Number(quantity) || 1)),
+    name_on_card: String(name_on_card || ""),
+  });
+  return res.data;
+}
+
+// ---------------------------------------------------------------------
 // CABLE SUPPORT (website plan catalog)
 // Alrahuz's API has no plans endpoint; the cable plans live behind the
 // logged-in buy page (/ajax/loadcableplans/?cablename=N). cablename codes:
@@ -377,4 +438,7 @@ module.exports = {
   getDiscoList,
   discoIdForCode,
   meterTypeCode,
+  getRechargePinPlans,
+  resolveRechargePinAmount,
+  buyRechargePin,
 };

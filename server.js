@@ -1370,12 +1370,18 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
 
 app.get("/api/v2/vtu/recharge-pin/plans", async (req, res) => {
   try {
-    // NOTE: Alrahuz has NO recharge-pin API endpoint, so recharge pins are
-    // ALWAYS fulfilled by Bigisub regardless of provider_routing.
-    const netId = getNetworkId(req.query.network);
-    const response = await bigiClient.get("/api/v2/vtu/recharge-pin/plans/?network=" + netId);
-    const plans = response.data?.data || (Array.isArray(response.data) ? response.data : []);
-    res.json({ success: true, data: plans });
+    // Return the ACTIVE provider's recharge-pin denominations so the app shows
+    // the prices/catalog the provider will actually fulfil (mirrors data plans).
+    const provider = await getActiveProvider("recharge_pin");
+    let plans;
+    if (provider === "alrahuz") {
+      plans = alrahuzService.getRechargePinPlans(req.query.network);
+    } else {
+      const netId = getNetworkId(req.query.network);
+      const response = await bigiClient.get("/api/v2/vtu/recharge-pin/plans/?network=" + netId);
+      plans = response.data?.data || (Array.isArray(response.data) ? response.data : []);
+    }
+    res.json({ success: true, provider, data: plans });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message, data: [] });
   }
@@ -1586,14 +1592,22 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid or missing plan ID" });
     }
 
-    // Resolve the unit price from Bigisub's own plan catalog, then charge qty x price.
-    // Alrahuz has NO recharge-pin endpoint — recharge pins are Bigisub-only.
-    const netId = getNetworkId(network);
-    const plansRes = await bigiClient.get("/api/v2/vtu/recharge-pin/plans/?network=" + netId);
-    const plans = plansRes.data?.data || (Array.isArray(plansRes.data) ? plansRes.data : []);
-    const planInfo = plans.find(p => Number(p.id) === numericPlanId);
-    const unitPrice = Number(planInfo?.regular_price || planInfo?.corporate_price || 0);
-    const price = unitPrice * qty;
+    // Route to the ACTIVE provider for recharge pins (provider_routing).
+    const activeProvider = await getActiveProvider("recharge_pin");
+
+    // Resolve the unit price from the ACTIVE provider's denomination catalog,
+    // then charge qty x price.
+    let unitPrice;
+    if (activeProvider === "alrahuz") {
+      unitPrice = alrahuzService.resolveRechargePinAmount(network, numericPlanId);
+    } else {
+      const netId = getNetworkId(network);
+      const plansRes = await bigiClient.get("/api/v2/vtu/recharge-pin/plans/?network=" + netId);
+      const plans = plansRes.data?.data || (Array.isArray(plansRes.data) ? plansRes.data : []);
+      const planInfo = plans.find(p => Number(p.id) === numericPlanId);
+      unitPrice = Number(planInfo?.regular_price || planInfo?.corporate_price || 0);
+    }
+    const price = (unitPrice || 0) * qty;
     if (price <= 0) {
       return res.status(400).json({ success: false, message: "Could not determine plan price" });
     }
@@ -1604,27 +1618,37 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
     }
 
     // Debit FIRST so an order can never be delivered without charging the
-    // user. Refunded automatically if Bigisub rejects the order below.
+    // user. Refunded automatically if the provider rejects the order below.
     const newBalance = await debitWallet(userId, price);
     if (newBalance === null) {
       return res.status(400).json({ success: false, message: "Could not debit your wallet. Please try again." });
     }
     // Stash the debit on the request so the catch block (which cannot see
-    // try-block consts) can refund the exact amount if Bigisub rejects it.
+    // try-block consts) can refund the exact amount if the provider rejects it.
     req._debit = { userId: userId, price: price };
     const txRef = newTxRef("PIN");
 
-    const response = await bigiClient.post("/api/v2/vtu/recharge-pin/purchase/", {
-      network: netId,
-      plan: numericPlanId,
-      quantity: qty,
-      card_name: String(card_name || "").trim(),
-      name_on_card: String(name_on_card || "").trim(),
-      pin: DEFAULT_PIN
-    });
-    console.log("📦 RECHARGE PIN raw response:", JSON.stringify(response.data));
+    let response;
+    if (activeProvider === "alrahuz") {
+      response = await alrahuzService.buyRechargePin({
+        network: network, // slug / app id — alrahuz.getNetworkId maps it
+        network_amount: numericPlanId, // the Alrahuz network_amount id from the catalog
+        quantity: qty,
+        name_on_card: String(name_on_card || card_name || "").trim(),
+      });
+    } else {
+      response = (await bigiClient.post("/api/v2/vtu/recharge-pin/purchase/", {
+        network: getNetworkId(network),
+        plan: numericPlanId,
+        quantity: qty,
+        card_name: String(card_name || "").trim(),
+        name_on_card: String(name_on_card || "").trim(),
+        pin: DEFAULT_PIN
+      })).data;
+    }
+    console.log("📦 RECHARGE PIN raw response (" + activeProvider + "):", JSON.stringify(response));
 
-    if (bigiFailed(response.data)) {
+    if (bigiFailed(response)) {
       // Order was not fulfilled — refund the debit and log the failure.
       await creditWallet(userId, price);
       await logTx({
@@ -1639,10 +1663,11 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
       });
       return res.status(400).json({
         success: false,
-        message: bigiErrorMessage(response.data, "Bigisub rejected this purchase")
+        message: bigiErrorMessage(response, activeProvider === "alrahuz"
+          ? "Alrahuzdata rejected this purchase"
+          : "Bigisub rejected this purchase")
       });
     }
-
 
     await logTx({
       user_id: userId,
@@ -1654,25 +1679,25 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
       reference: txRef,
       provider: canonicalNetworkName(network)
     });
-    console.log("✅ Recharge PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
-    res.json({ success: true, message: "Recharge PINs generated", data: response.data, balance: newBalance, reference: txRef });
+    console.log("✅ Recharge PIN (" + activeProvider + "): user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
+    res.json({ success: true, message: "Recharge PINs generated", data: response, balance: newBalance, reference: txRef });
   } catch (err) {
     // try-block consts are invisible to catch, so the debit context comes
     // from the request (stashed right after the debit succeeded).
     const ctx = req._debit || null;
-    const bigiStatus = err.response?.status || 0;
-    if (bigiStatus >= 400 && bigiStatus < 500) {
-      // Bigisub rejected the request outright (bad amount, bad phone, auth…)
+    const provStatus = err.response?.status || 0;
+    if (provStatus >= 400 && provStatus < 500) {
+      // The provider rejected the request outright (bad amount, bad network, auth…)
       // — the order was NOT placed. Refund the debit so the user is never
       // charged for an order that didn't happen.
       if (ctx) {
         await creditWallet(ctx.userId, ctx.price);
       }
-      console.error("❌ Order rejected by Bigisub:", err.response?.data || err.message);
+      console.error("❌ Order rejected by provider:", err.response?.data || err.message);
       return res.status(400).json({ success: false, message: bigiErrorMessage(err.response?.data, err.message) });
     }
-    // 5xx / timeout / connection error: Bigisub may STILL have processed the
-    // order (it has delivered airtime while returning "An error occurred…").
+    // 5xx / timeout / connection error: the provider may STILL have processed
+    // the order (it has delivered airtime while returning "An error occurred…").
     // We already debited, so keep the charge and let the user verify delivery
     // — refunding blindly would hand out free airtime.
     console.error("⚠️ Order outcome uncertain:", err.response?.data || err.message);
@@ -1933,7 +1958,7 @@ app.get("/api/v2/admin/stats", requireAdmin, async (_req, res) => {
     }
 
     // Fetch active provider routes
-    let activeRoutes = { airtime: "bigisub", data: "bigisub", cable: "bigisub", electricity: "bigisub", epin: "bigisub" };
+    let activeRoutes = { airtime: "bigisub", data: "bigisub", cable: "bigisub", electricity: "bigisub", epin: "bigisub", recharge_pin: "bigisub" };
     try {
       const { data: routes } = await supabase.from("provider_routing").select("service, provider");
       if (routes) routes.forEach(r => { activeRoutes[r.service] = r.provider; });
@@ -1975,7 +2000,7 @@ app.get("/api/v2/admin/stats", requireAdmin, async (_req, res) => {
 // GET /api/v2/admin/providers — current routing state
 app.get("/api/v2/admin/providers", requireAdmin, async (_req, res) => {
   try {
-    let routes = { airtime: "bigisub", data: "bigisub", cable: "bigisub", electricity: "bigisub", epin: "bigisub" };
+    let routes = { airtime: "bigisub", data: "bigisub", cable: "bigisub", electricity: "bigisub", epin: "bigisub", recharge_pin: "bigisub" };
     try {
       const { data } = await supabase.from("provider_routing").select("service, provider");
       if (data) data.forEach(r => { routes[r.service] = r.provider; });
@@ -1994,7 +2019,7 @@ app.post("/api/v2/admin/providers/route", requireAdmin, async (req, res) => {
   try {
     const { global_provider, service, provider } = req.body;
     const validProviders = ["bigisub", "alrahuz"];
-    const validServices = ["airtime", "data", "cable", "electricity", "epin"];
+    const validServices = ["airtime", "data", "cable", "electricity", "epin", "recharge_pin"];
 
     // Global switch: update all services at once
     if (global_provider) {
