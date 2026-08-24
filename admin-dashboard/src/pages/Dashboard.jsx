@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../components/Toast'
 import CarrierBadge from '../components/CarrierBadge'
-import { Wallet, Users, ArrowLeftRight, TrendingDown, Loader2, RefreshCw, Zap, Wifi, Tv, Lightbulb, GraduationCap, AlertTriangle, BarChart3 } from 'lucide-react'
+import { Wallet, Users, ArrowLeftRight, TrendingDown, Loader2, RefreshCw, Zap, Wifi, Tv, Lightbulb, GraduationCap, AlertTriangle, BarChart3, Banknote } from 'lucide-react'
+import { fmtLagos, fmtNgn } from '../lib/format'
 
 const serviceIcons = {
   airtime: Zap,
@@ -20,17 +21,17 @@ const serviceLabels = {
   epin: 'Exam PINs',
 }
 
-function StatCard({ icon: Icon, label, value, color, sub }) {
+function StatCard({ icon: Icon, label, value, color, sub, highlight }) {
   return (
-    <div className="card group hover:border-gray-700 transition-all">
+    <div className={`card group hover:border-gray-700 transition-all ${highlight ? 'border-brand-500/50 ring-1 ring-brand-500/30' : ''}`}>
       <div className="flex items-start justify-between mb-3">
         <div className={`p-2.5 rounded-xl ${color}`}>
           <Icon size={20} />
         </div>
       </div>
-      <p className="text-2xl font-bold text-gray-100 tabular-nums">{value}</p>
-      <p className="text-sm text-gray-500 mt-0.5">{label}</p>
-      {sub && <p className="text-xs text-gray-600 mt-1">{sub}</p>}
+      <p className={`tabular-nums ${highlight ? 'text-3xl font-extrabold text-white' : 'text-2xl font-bold text-gray-100'}`}>{value}</p>
+      <p className={`${highlight ? 'text-sm font-semibold text-gray-100 mt-0.5' : 'text-sm text-gray-500 mt-0.5'}`}>{label}</p>
+      {sub && <p className={`${highlight ? 'text-xs font-medium text-gray-300 mt-1' : 'text-xs text-gray-600 mt-1'}`}>{sub}</p>}
     </div>
   )
 }
@@ -242,7 +243,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           {lastUpdated && (
             <span className="text-xs text-gray-600">
-              Updated {lastUpdated.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              Updated {fmtLagos(lastUpdated, { date: false })}
             </span>
           )}
           <button onClick={fetchData} className="btn-secondary" disabled={loading}>
@@ -272,25 +273,26 @@ export default function Dashboard() {
         </div>
       ) : stats ? (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
             <StatCard
               icon={Wallet}
               label="Bigisub Balance"
-              value={fmt(stats.balances?.bigisub)}
-              color="bg-brand-600/15 text-brand-400"
+              value={fmtNgn(stats.balances?.bigisub)}
+              color="bg-brand-600/20 text-brand-300"
               sub="Bigisub vendor credit"
+              highlight
             />
             <StatCard
               icon={Wallet}
               label="Alrahuz Balance"
-              value={fmt(stats.balances?.alrahuz)}
+              value={fmtNgn(stats.balances?.alrahuz)}
               color="bg-purple-500/15 text-purple-400"
               sub="Alrahuz data vendor credit"
             />
             <StatCard
               icon={TrendingDown}
               label="Total Wallet Liability"
-              value={fmt(stats.total_wallet_liability)}
+              value={fmtNgn(stats.total_wallet_liability)}
               color="bg-amber-500/15 text-amber-400"
               sub="Sum of all user balances"
             />
@@ -299,6 +301,13 @@ export default function Dashboard() {
               label="Registered Users"
               value={Number(stats.total_registered_users || 0).toLocaleString()}
               color="bg-emerald-500/15 text-emerald-400"
+            />
+            <StatCard
+              icon={Banknote}
+              label="Revenue Generated"
+              value={fmtNgn(stats.total_revenue)}
+              color="bg-emerald-600/15 text-emerald-300"
+              sub="Successful purchases only"
             />
           </div>
 
@@ -393,7 +402,7 @@ export default function Dashboard() {
                       <CarrierBadge provider={tx.provider} />
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
-                      {tx.created_at ? new Date(tx.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      {fmtLagos(tx.created_at)}
                     </td>
                   </tr>
                 ))

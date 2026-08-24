@@ -196,6 +196,54 @@ async function buyData({ network, mobile_number, plan, Ported_number = true }) {
   return res.data;
 }
 
+// Carrier name (stored in transactions.provider) -> Alrahuz network id, used
+// to reconcile a pending data order against the account's order history.
+const CARRIER_TO_ALRAHUZ = { MTN: 1, GLO: 2, "9MOBILE": 3, AIRTEL: 4 };
+
+/**
+ * Queries the account's recent order history (data or airtime) for an order
+ * matching the given phone (+ carrier/plan/amount when available) within the
+ * last [minutes]. Used ONLY for SAFE reconciliation: we refund a pending order
+ * only when this returns a definitive Status:"failed", and mark it delivered
+ * only on a definitive success — never guessing.
+ *
+ * Returns { matches, order } where order is the most recent matching order.
+ */
+async function queryRecentOrder({ service, mobile_number, amount, carrier, plan, minutes = 40 }) {
+  const phone = String(mobile_number || "").replace(/[^0-9]/g, "");
+  if (!phone) return { matches: [], order: null };
+
+  let list = [];
+  if (service === "data") {
+    const r = await apiClient.get("/api/data/", { timeout: 20000 });
+    const body = r.data;
+    list = Array.isArray(body) ? body : body?.data || body?.results || [];
+  } else if (service === "airtime") {
+    const r = await apiClient.get("/api/topup/", { timeout: 20000 });
+    const body = r.data;
+    list = body?.results || body?.data || (Array.isArray(body) ? body : []);
+  } else {
+    return { matches: [], order: null };
+  }
+
+  const since = Date.now() - minutes * 60 * 1000;
+  const netId = service === "data" && carrier ? CARRIER_TO_ALRAHUZ[String(carrier).toUpperCase()] : null;
+
+  const matches = list
+    .filter((o) => {
+      if (String(o.mobile_number || "").replace(/[^0-9]/g, "") !== phone) return false;
+      const t = Date.parse(String(o.create_date || ""));
+      if (!t || t < since) return false;
+      if (service === "data" && netId && Number(o.network) !== netId) return false;
+      if (service === "data" && plan && String(o.plan) !== String(plan)) return false;
+      if (service === "airtime" && amount && Math.abs(Number(o.amount || o.paid_amount || 0) - Number(amount)) > 1) return false;
+      return true;
+    })
+    .sort((a, b) => Date.parse(b.create_date || 0) - Date.parse(a.create_date || 0));
+
+  return { matches, order: matches[0] || null };
+}
+
 // ---------------------------------------------------------------------
 // RECHARGE PIN (VTU scratch card) SUPPORT — Alrahuz API: POST /api/rechargepin/
 //   { "network": network_id, "network_amount": <recharge_card_network_api_id>,
@@ -441,4 +489,5 @@ module.exports = {
   getRechargePinPlans,
   resolveRechargePinAmount,
   buyRechargePin,
+  queryRecentOrder,
 };

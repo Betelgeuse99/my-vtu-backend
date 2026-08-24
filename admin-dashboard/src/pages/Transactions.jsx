@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
 import CarrierBadge from '../components/CarrierBadge'
-import { ChevronLeft, ChevronRight, Loader2, RotateCcw, Filter, Search, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, RotateCcw, Filter, Search, X, ShieldCheck } from 'lucide-react'
+import { fmtLagos } from '../lib/format'
 
 const statusBadge = (status) => {
   const s = (status || '').toLowerCase()
@@ -28,6 +29,7 @@ export default function Transactions() {
   const [refundTx, setRefundTx] = useState(null)
   const [refundReason, setRefundReason] = useState('')
   const [refundLoading, setRefundLoading] = useState(false)
+  const [reconciling, setReconciling] = useState(null)
 
   const toast = useToast()
 
@@ -89,9 +91,19 @@ export default function Transactions() {
     }
   }
 
-  const fmtDate = (d) => {
-    if (!d) return '—'
-    return new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  const fmtDate = (d) => fmtLagos(d)
+
+  const handleReconcile = async (tx) => {
+    setReconciling(tx.id)
+    try {
+      const res = await api.post('/api/v2/admin/transactions/reconcile', { transaction_id: tx.id })
+      if (toast) toast.success(res.data?.message || 'Reconciled')
+      fetchTxns(pagination.page)
+    } catch (err) {
+      if (toast) toast.error(err.response?.data?.message || err.message)
+    } finally {
+      setReconciling(null)
+    }
   }
 
   if (loading && txns.length === 0) {
@@ -211,7 +223,17 @@ export default function Transactions() {
                     <td className="px-3 py-2.5 text-xs text-gray-500 font-mono truncate max-w-[120px]">{tx.reference || '—'}</td>
                     <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{fmtDate(tx.created_at)}</td>
                     <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                      {(tx.status === 'successful' || tx.status === 'failed') && tx.service_type !== 'funding' && tx.service_type !== 'admin_adjust' && tx.service_type !== 'refund' ? (
+                      {tx.status === 'pending' ? (
+                        <button
+                          onClick={() => handleReconcile(tx)}
+                          disabled={reconciling === tx.id}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/20 transition-all"
+                          title="Verify against provider — refunds only if delivery is disproven"
+                        >
+                          <ShieldCheck size={12} />
+                          {reconciling === tx.id ? 'Checking…' : 'Verify'}
+                        </button>
+                      ) : (tx.status === 'successful' || tx.status === 'failed') && tx.service_type !== 'funding' && tx.service_type !== 'admin_adjust' && tx.service_type !== 'refund' ? (
                         <button
                           onClick={() => { setRefundTx(tx); setRefundReason('') }}
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-all"

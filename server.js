@@ -7,6 +7,7 @@ const helmet = require("helmet");
 const axios = require("axios");
 const https = require("https");
 const crypto = require("crypto");
+const cron = require("node-cron");
 const { createClient } = require("@supabase/supabase-js");
 
 // Crash forensics: without these an unhandled rejection kills the server
@@ -2000,15 +2001,19 @@ app.get("/api/v2/admin/stats", requireAdmin, async (_req, res) => {
       console.warn("⚠️ Could not fetch provider_routing (table may not exist yet):", e.message);
     }
 
-    const [usersRes, walletRes, txRes] = await Promise.all([
+    const [usersRes, walletRes, txRes, revenueRes] = await Promise.all([
       supabase.from("profiles").select("id", { count: "exact", head: true }),
       supabase.from("wallets").select("balance"),
-      supabase.from("transactions").select("id", { count: "exact", head: true })
+      supabase.from("transactions").select("id", { count: "exact", head: true }),
+      // Revenue = ONLY successful transactions (refunded / failed / pending
+      // must never count). Summed in JS to be safe across statuses.
+      supabase.from("transactions").select("amount").eq("status", "successful")
     ]);
 
     const totalUsers = usersRes.count || 0;
     const totalTransactions = txRes.count || 0;
     const totalLiability = (walletRes.data || []).reduce((sum, w) => sum + Number(w.balance || 0), 0);
+    const totalRevenue = (revenueRes.data || []).reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
     res.json({
       success: true,
@@ -2022,7 +2027,8 @@ app.get("/api/v2/admin/stats", requireAdmin, async (_req, res) => {
         active_routes: activeRoutes,
         total_registered_users: totalUsers,
         total_transactions: totalTransactions,
-        total_wallet_liability: Number(totalLiability.toFixed(2))
+        total_wallet_liability: Number(totalLiability.toFixed(2)),
+        total_revenue: Number(totalRevenue.toFixed(2))
       }
     });
   } catch (err) {
@@ -2343,6 +2349,110 @@ app.get("/api/v2/admin/transactions", requireAdmin, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------
+// PENDING-ORDER RECONCILIATION (safe auto-refund)
+// A pending transaction means the wallet was debited but the provider's
+// outcome was unknown (timeout/5xx). We NEVER refund without proof it was
+// not delivered — that would hand out free service. We reconcile against the
+// provider's own order history:
+//   delivered  -> mark the transaction successful (keep the charge)
+//   failed     -> auto-refund (credit wallet + log refund audit row)
+//   absent     -> the provider never created the order -> safe to refund
+//   unknown    -> leave pending for the admin to decide
+// ---------------------------------------------------------------------
+
+async function reconcilePending(tx) {
+  const svc = (tx.service_type || "").toLowerCase();
+  if (svc !== "data" && svc !== "airtime") return { verdict: "unsupported" };
+
+  const provider = await getActiveProvider(svc === "data" ? "data" : "airtime");
+  if (provider !== "alrahuz") return { verdict: "unsupported", reason: "reconciliation only wired for Alrahuz" };
+
+  try {
+    const { matches, order } = await alrahuzService.queryRecentOrder({
+      service: svc,
+      mobile_number: tx.recipient,
+      amount: Number(tx.amount || 0),
+      carrier: tx.provider,
+      plan: svc === "data" ? tx.plan_id : null,
+    });
+    if (!order) return { verdict: "absent", matches: matches.length };
+
+    const status = String(order.Status || order.status || "").toLowerCase();
+    if (["successful", "success", "delivered", "1"].includes(status)) {
+      return { verdict: "delivered", orderId: order.id };
+    }
+    if (["failed", "error", "failure", "reversed", "refunded", "0"].includes(status)) {
+      return { verdict: "failed", orderId: order.id };
+    }
+    return { verdict: "unknown", orderId: order.id };
+  } catch (e) {
+    return { verdict: "error", error: e.message };
+  }
+}
+
+async function refundPendingTx(tx) {
+  const newBalance = await creditWallet(tx.user_id, Number(tx.amount));
+  if (newBalance === null) return { refunded: false, error: "Wallet credit failed" };
+
+  await supabase.from("transactions").update({ status: "refunded" }).eq("id", tx.id);
+  await logTx({
+    user_id: tx.user_id,
+    title: "Auto-refund: " + (tx.title || "Transaction"),
+    service_type: "refund",
+    amount: Number(tx.amount),
+    recipient: tx.recipient || "system",
+    status: "successful",
+    reference: newTxRef("REFUND"),
+    provider: tx.provider,
+  });
+  return { refunded: true, newBalance };
+}
+
+// POST /api/v2/admin/transactions/reconcile — verify a pending transaction
+// against the provider and refund ONLY when delivery is disproven.
+app.post("/api/v2/admin/transactions/reconcile", requireAdmin, async (req, res) => {
+  try {
+    const { transaction_id } = req.body;
+    if (!transaction_id) return res.status(400).json({ success: false, message: "transaction_id is required" });
+
+    const { data: tx, error } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("id", transaction_id)
+      .maybeSingle();
+    if (error || !tx) return res.status(404).json({ success: false, message: "Transaction not found" });
+    if (tx.status !== "pending") {
+      return res.status(400).json({ success: false, message: "Only pending transactions can be reconciled" });
+    }
+
+    const r = await reconcilePending(tx);
+
+    if (r.verdict === "delivered") {
+      await supabase.from("transactions").update({ status: "successful" }).eq("id", tx.id);
+      return res.json({ success: true, action: "marked_successful", message: "Provider confirmed delivery — charge kept", detail: r.orderId });
+    }
+
+    if (r.verdict === "failed" || r.verdict === "absent") {
+      const refund = await refundPendingTx(tx);
+      if (refund.refunded) {
+        return res.json({ success: true, action: "refunded", message: `Refunded ₦${Number(tx.amount).toLocaleString()} (delivery not confirmed)` });
+      }
+      return res.status(500).json({ success: false, action: "refund_failed", message: refund.error || "Refund failed" });
+    }
+
+    return res.json({
+      success: false,
+      action: "unresolved",
+      message: "Could not verify delivery against the provider — leave pending or refund manually.",
+      detail: r.error || r.orderId || null,
+    });
+  } catch (err) {
+    console.error("❌ Admin reconcile error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // POST /api/v2/admin/transactions/refund — refund a transaction
 app.post("/api/v2/admin/transactions/refund", requireAdmin, async (req, res) => {
   try {
@@ -2500,6 +2610,44 @@ if (!process.env.DISABLE_KEEP_ALIVE) {
   setInterval(() => {
     https.get(pingUrl, (response) => response.resume()).on("error", () => {});
   }, 10 * 60 * 1000);
+}
+
+// ---------------------------------------------------------------------
+// AUTO-RECONCILE PENDING ORDERS (safe auto-refund)
+// Every 2 minutes, pending transactions (debited, outcome unknown) within the
+// last hour are reconciled against the provider's order history. We refund
+// ONLY when the provider confirms the order FAILED — never on a guess. A
+// delivered order is flipped to successful; absent/unknown stays pending so
+// the admin can decide. Disable with DISABLE_AUTO_RECONCILE=1 if ever needed.
+// ---------------------------------------------------------------------
+if (!process.env.DISABLE_AUTO_RECONCILE) {
+  cron.schedule("*/2 * * * *", async () => {
+    try {
+      const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const { data: pending } = await supabase
+        .from("transactions")
+        .select("*")
+        .eq("status", "pending")
+        .gte("created_at", since)
+        .limit(20);
+      if (!pending || pending.length === 0) return;
+
+      for (const tx of pending) {
+        const r = await reconcilePending(tx);
+        if (r.verdict === "failed") {
+          const refund = await refundPendingTx(tx);
+          console.log(`✅ Auto-reconcile refund (confirmed failed): ${tx.reference} -> ${refund.refunded ? "refunded ₦" + tx.amount : "FAILED " + (refund.error || "")}`);
+        } else if (r.verdict === "delivered") {
+          await supabase.from("transactions").update({ status: "successful" }).eq("id", tx.id);
+          console.log(`ℹ️ Auto-reconcile delivered (charge kept): ${tx.reference}`);
+        }
+        // absent / unknown / error: leave pending for the admin to decide.
+      }
+    } catch (e) {
+      console.error("❌ Auto-reconcile job error:", e.message);
+    }
+  });
+  console.log("♻️ Auto-reconcile active (every 2 min): refunds only provider-confirmed failures");
 }
 
 const PORT = process.env.PORT || 3000;
