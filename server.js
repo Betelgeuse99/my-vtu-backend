@@ -2329,9 +2329,24 @@ app.post("/api/v2/admin/plans/update-price", requireAdmin, async (req, res) => {
 const path = require("path");
 const adminDist = path.join(__dirname, "admin-dashboard", "dist");
 if (require("fs").existsSync(adminDist)) {
-  app.use("/admin", express.static(adminDist, { index: "index.html" }));
+  // Cache policy that makes every deploy visible immediately:
+  //  - index.html: NEVER cached (browser re-fetches it each load), so it
+  //    always points at the newest hashed bundle after a deploy.
+  //  - hashed assets (index-*.js / *.css): immutable, cached long-term
+  //    (Vite content-hashes the filenames, so a new deploy = new filename =
+  //    no stale JS ever served).
+  const setAdminHeaders = (res, filePath) => {
+    if (filePath.endsWith("index.html")) {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+    } else {
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    }
+  };
+  app.use("/admin", express.static(adminDist, { index: "index.html", setHeaders: setAdminHeaders }));
   // SPA fallback: client-side routes like /admin/plans render index.html
   app.get("/admin/*", (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.sendFile(path.join(adminDist, "index.html"));
   });
   console.log("🖥️ Admin dashboard served at /admin");
