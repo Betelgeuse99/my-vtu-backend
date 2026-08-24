@@ -42,13 +42,20 @@ const apiClient = axios.create({
 });
 
 // Network IDs on Alrahuzdata: 1=MTN, 2=GLO, 3=9MOBILE, 4=AIRTEL, 5=SMILE.
-// The app sends EITHER slugs OR its own registry numbers (1=MTN,2=GLO,
-// 3=AIRTEL,4=9MOBILE) — translate both into Alrahuz ids here.
+// The Android app's registry is 1=MTN, 2=AIRTEL, 3=GLO, 4=9MOBILE (see
+// TransactionManager.NETWORKS). The app sends either its numeric id (data
+// bundles) or a slug (airtime / recharge-pin). This map translates the APP's
+// ids into ALRAHUZ ids. It is the inverse of sync_alrahuz_plans.js
+// ALRAHUZ_NET_TO_APP and MUST stay in sync with it.
+//
+// NOTE (was the root of the Airtel/Glo swap): the app's numeric ids are
+// 2=AIRTEL, 3=GLO — NOT the Bigisub numbering (2=GLO, 3=AIRTEL). Passing app
+// id 2 through as Alrahuz id 2 bought GLO data for Airtel and vice-versa.
 function getNetworkId(network) {
   const map = {
     "1": 1, "mtn": 1,
-    "2": 2, "glo": 2,
-    "3": 4, "airtel": 4,
+    "2": 4, "airtel": 4,
+    "3": 2, "glo": 2,
     "4": 3, "9mobile": 3, "eti": 3
   };
   return map[String(network || "").toLowerCase().trim()] || 1;
@@ -131,7 +138,11 @@ async function getWebSession() {
  *   { id, plan_id, plantype, size, validity, amount }
  */
 async function getDataPlans(network) {
-  const netId = getNetworkId(network);
+  // [network] is ALREADY an Alrahuz network id (the sync script passes one
+  // directly). Do NOT route it through getNetworkId() — that maps APP ids to
+  // Alrahuz ids, so feeding it an Alrahuz id here scraped the WRONG network
+  // and was the root of the Airtel/Glo plan swap in the catalog.
+  const netId = Number(network) || 1;
   const { jar } = await getWebSession();
 
   const res = await apiClient.get("/ajax/load_plans/", {

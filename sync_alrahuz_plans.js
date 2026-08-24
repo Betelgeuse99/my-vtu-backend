@@ -30,8 +30,13 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Alrahuz network ids -> our app network ids (1=MTN, 2=GLO, 3=AIRTEL, 4=9MOBILE)
-const ALRAHUZ_NET_TO_APP = { 1: 1, 2: 2, 3: 4, 4: 3 }; // skip 5 (SMILE)
+// Alrahuz network ids -> app network ids (1=MTN, 2=AIRTEL, 3=GLO, 4=9MOBILE).
+// Alrahuz numbering: 1=MTN, 2=GLO, 3=9MOBILE, 4=AIRTEL (5=SMILE, skipped).
+// This is the INVERSE of services/alrahuz.js getNetworkId and MUST stay in
+// sync. Previous value {2:2, 4:3} used the Bigisub convention and stored GLO
+// plans under AIRTEL's slot (network_id 2) and AIRTEL under GLO's slot
+// (network_id 3) — the Airtel/Glo swap on the data bundles dropdown.
+const ALRAHUZ_NET_TO_APP = { 1: 1, 2: 3, 3: 4, 4: 2 }; // skip 5 (SMILE)
 
 function volumeToMb(size) {
   const m = String(size || "").trim().match(/^([\d.]+)\s*(GB|MB|KB)$/i);

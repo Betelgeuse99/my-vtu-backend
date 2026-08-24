@@ -145,6 +145,7 @@ export default function Transactions() {
               <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase tracking-wider">
                 <th className="px-5 py-3">Service</th>
                 <th className="px-5 py-3">User</th>
+                <th className="px-5 py-3">Phone / Recipient</th>
                 <th className="px-5 py-3 text-right">Amount</th>
                 <th className="px-5 py-3">Status</th>
                 <th className="px-5 py-3">Reference</th>
@@ -154,11 +155,11 @@ export default function Transactions() {
             </thead>
             <tbody>
               {loading && txns.length === 0 ? (
-                <tr><td colSpan={7} className="px-5 py-12 text-center text-gray-500">
+                <tr><td colSpan={8} className="px-5 py-12 text-center text-gray-500">
                   <Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-400" /> Loading…
                 </td></tr>
               ) : txns.length === 0 ? (
-                <tr><td colSpan={7} className="px-5 py-12 text-center text-gray-500">No transactions found</td></tr>
+                <tr><td colSpan={8} className="px-5 py-12 text-center text-gray-500">No transactions found</td></tr>
               ) : (
                 txns.map(tx => (
                   <tr key={tx.id} className="table-row">
@@ -173,8 +174,9 @@ export default function Transactions() {
                     </td>
                     <td className="px-5 py-3">
                       <p className="text-gray-300 text-xs">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
-                      <p className="text-xs text-gray-600 truncate max-w-[120px]">{tx.profiles?.email}</p>
+                      <p className="text-xs text-gray-600 break-all">{tx.profiles?.email || ''}</p>
                     </td>
+                    <td className="px-5 py-3 text-xs text-gray-300 whitespace-nowrap">{tx.recipient || '—'}</td>
                     <td className="px-5 py-3 text-right font-mono text-gray-200">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
