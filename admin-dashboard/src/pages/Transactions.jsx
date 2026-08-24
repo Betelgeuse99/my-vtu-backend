@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
 import CarrierBadge from '../components/CarrierBadge'
-import { ChevronLeft, ChevronRight, Loader2, RotateCcw, Filter } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, RotateCcw, Filter, Search, X } from 'lucide-react'
 
 const statusBadge = (status) => {
   const s = (status || '').toLowerCase()
@@ -22,6 +22,8 @@ export default function Transactions() {
   const [error, setError] = useState(null)
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
 
   const [refundTx, setRefundTx] = useState(null)
   const [refundReason, setRefundReason] = useState('')
@@ -37,6 +39,7 @@ export default function Transactions() {
       const params = new URLSearchParams({ page, limit: 25 })
       if (statusFilter) params.set('status', statusFilter)
       if (typeFilter) params.set('service_type', typeFilter)
+      if (debouncedSearch) params.set('search', debouncedSearch)
       const res = await api.get(`/api/v2/admin/transactions?${params}`)
       setTxns(res.data.data || [])
       setPagination(res.data.pagination)
@@ -46,7 +49,7 @@ export default function Transactions() {
     } finally {
       setLoading(false)
     }
-  }, [session, statusFilter, typeFilter, toast])
+  }, [session, statusFilter, typeFilter, debouncedSearch, toast])
 
   useEffect(() => {
     if (session) fetchTxns(1)
@@ -58,9 +61,15 @@ export default function Transactions() {
     return () => clearInterval(timer)
   }, [session, fetchTxns, pagination.page])
 
+  // Debounce the search input so we don't fire a request per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 400)
+    return () => clearTimeout(t)
+  }, [search])
+
   useEffect(() => {
     if (session) fetchTxns(1)
-  }, [statusFilter, typeFilter])
+  }, [statusFilter, typeFilter, debouncedSearch])
 
   const handleRefund = async () => {
     if (!refundTx) return
@@ -100,7 +109,25 @@ export default function Transactions() {
         <p className="text-sm text-gray-500 mt-1">{pagination.total} total records</p>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by email or phone number…"
+            className="input pl-9 pr-8"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+              title="Clear search"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
         <div className="relative">
           <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <select

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../components/Toast'
 import CarrierBadge from '../components/CarrierBadge'
-import { Wallet, Users, ArrowLeftRight, TrendingDown, Loader2, RefreshCw, Zap, Wifi, Tv, Lightbulb, GraduationCap, AlertTriangle } from 'lucide-react'
+import { Wallet, Users, ArrowLeftRight, TrendingDown, Loader2, RefreshCw, Zap, Wifi, Tv, Lightbulb, GraduationCap, AlertTriangle, BarChart3 } from 'lucide-react'
 
 const serviceIcons = {
   airtime: Zap,
@@ -48,12 +48,117 @@ function ProviderBadge({ provider }) {
   )
 }
 
+const CHART_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316', '#84cc16', '#64748b']
+
+function MiniStat({ label, value }) {
+  return (
+    <div className="p-3 rounded-xl bg-gray-800/40 border border-gray-800">
+      <p className="text-lg font-bold text-gray-100 tabular-nums">{value}</p>
+      <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+    </div>
+  )
+}
+
+/** Pure-SVG bar chart (histogram) of purchases over the last 14 days. */
+function DailyBarChart({ data }) {
+  const rows = data || []
+  const max = Math.max(1, ...rows.map((d) => d.count || 0))
+  const W = 560, H = 150, pad = 4
+  const bw = (W - pad * 2) / Math.max(1, rows.length)
+  return (
+    <svg viewBox={`0 0 ${W} ${H + 26}`} className="w-full" preserveAspectRatio="xMidYMid meet">
+      {rows.map((d, i) => {
+        const h = ((d.count || 0) / max) * (H - 22)
+        const x = pad + i * bw + bw * 0.18
+        const w = bw * 0.64
+        const y = H - h
+        return (
+          <g key={d.date}>
+            <rect x={x} y={y} width={w} height={h} rx={3} fill="#3b82f6" className="opacity-90 hover:opacity-100 transition-opacity">
+              <title>{`${d.date}: ${d.count} purchases · ₦${Number(d.amount || 0).toLocaleString()}`}</title>
+            </rect>
+            {(d.count || 0) > 0 && (
+              <text x={x + w / 2} y={y - 4} textAnchor="middle" fontSize="9" fill="#9ca3af" className="tabular-nums">{d.count}</text>
+            )}
+            {i % 2 === 0 && (
+              <text x={x + w / 2} y={H + 14} textAnchor="middle" fontSize="8" fill="#6b7280">{d.date.slice(5)}</text>
+            )}
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+/** Pure-SVG donut chart of the service-type breakdown. */
+function DonutChart({ data }) {
+  const rows = data || []
+  const total = rows.reduce((s, d) => s + (d.count || 0), 0) || 1
+  const R = 54, C = 2 * Math.PI * R
+  let offset = 0
+  return (
+    <div className="flex flex-col sm:flex-row items-center gap-6">
+      <svg viewBox="0 0 140 140" className="w-32 h-32 shrink-0">
+        <circle cx="70" cy="70" r={R} fill="none" stroke="#1f2937" strokeWidth="15" />
+        <g transform="rotate(-90 70 70)">
+          {rows.map((d, i) => {
+            const len = ((d.count || 0) / total) * C
+            const seg = (
+              <circle key={d.service_type || i} cx="70" cy="70" r={R} fill="none"
+                stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth="15"
+                strokeDasharray={`${Math.max(0, len - 1)} ${C - Math.max(0, len - 1)}`}
+                strokeDashoffset={-offset} />
+            )
+            offset += len
+            return seg
+          })}
+        </g>
+        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" fontSize="18" fontWeight="bold" fill="#f3f4f6" className="tabular-nums">{total}</text>
+      </svg>
+      <div className="flex-1 w-full min-w-0 space-y-1.5">
+        {rows.map((d, i) => (
+          <div key={d.service_type || i} className="flex items-center gap-2 text-xs">
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+            <span className="text-gray-400 capitalize flex-1 min-w-0 truncate">{d.service_type || '—'}</span>
+            <span className="text-gray-300 font-medium tabular-nums">{d.count}</span>
+            <span className="text-gray-600 tabular-nums w-10 text-right">{Math.round(((d.count || 0) / total) * 100)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Horizontal bars for the provider / carrier breakdown. */
+function ProviderBars({ data }) {
+  const rows = data || []
+  const max = Math.max(1, ...rows.map((d) => d.count || 0))
+  return (
+    <div className="space-y-2">
+      {rows.map((d) => (
+        <div key={d.provider} className="flex items-center gap-3">
+          <span className="text-xs text-gray-400 w-28 truncate">{d.provider || '—'}</span>
+          <div className="flex-1 h-4 bg-gray-800 rounded overflow-hidden">
+            <div
+              className="h-full rounded bg-gradient-to-r from-brand-600/70 to-brand-500/70 transition-[width] duration-300"
+              style={{ width: `${Math.max(2, ((d.count || 0) / max) * 100)}%` }}
+            />
+          </div>
+          <span className="text-xs text-gray-300 tabular-nums w-12 text-right">{d.count}</span>
+          <span className="text-xs text-gray-600 tabular-nums w-24 text-right">₦{Number(d.amount || 0).toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const toast = useToast()
 
   const [stats, setStats] = useState(null)
   const [providers, setProviders] = useState(null)
   const [recent, setRecent] = useState([])
+  const [charts, setCharts] = useState(null)
   const [loading, setLoading] = useState(true)
   const [errors, setErrors] = useState({})
   const [lastUpdated, setLastUpdated] = useState(null)
@@ -63,10 +168,11 @@ export default function Dashboard() {
 
     // Each section fetched independently — one failing must never blank
     // out the others, and every failure must be visible, never swallowed.
-    const [statsRes, providersRes, txRes] = await Promise.allSettled([
+    const [statsRes, providersRes, txRes, chartsRes] = await Promise.allSettled([
       api.get('/api/v2/admin/stats'),
       api.get('/api/v2/admin/providers'),
       api.get('/api/v2/admin/transactions?page=1&limit=8'),
+      api.get('/api/v2/admin/stats/charts'),
     ])
 
     const newErrors = {}
@@ -90,6 +196,13 @@ export default function Dashboard() {
     } else {
       newErrors.recent = txRes.reason?.response?.data?.message || 'Recent transactions unavailable'
       console.error('[Dashboard] recent transactions failed:', txRes.reason?.message)
+    }
+
+    if (chartsRes.status === 'fulfilled') {
+      setCharts(chartsRes.value.data?.data ?? null)
+    } else {
+      newErrors.charts = chartsRes.reason?.response?.data?.message || 'Statistics charts unavailable'
+      console.error('[Dashboard] charts failed:', chartsRes.reason?.message)
     }
 
     setErrors(newErrors)
@@ -289,6 +402,46 @@ export default function Dashboard() {
           </table>
         </div>
       </div>
+
+      {/* Purchase statistics — below recent transactions */}
+      {charts ? (
+        <div className="card">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-100">Purchase Statistics</h2>
+              <p className="text-sm text-gray-500">Last 14 days of platform activity</p>
+            </div>
+            <BarChart3 size={20} className="text-gray-600" />
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            <MiniStat label="Purchases" value={Number(charts.totals?.purchases || 0).toLocaleString()} />
+            <MiniStat label="Volume" value={fmt(charts.totals?.volume)} />
+            <MiniStat label="Successful" value={Number(charts.totals?.success || 0).toLocaleString()} />
+            <MiniStat label="Failed" value={Number(charts.totals?.failed || 0).toLocaleString()} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-gray-300 mb-3">Purchases per Day</h3>
+              <DailyBarChart data={charts.daily} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-gray-300 mb-3">By Service</h3>
+              <DonutChart data={charts.byService} />
+            </div>
+          </div>
+
+          <div className="mt-8">
+            <h3 className="text-sm font-semibold text-gray-300 mb-3">By Provider</h3>
+            <ProviderBars data={charts.byProvider} />
+          </div>
+        </div>
+      ) : loading ? (
+        <div className="card h-40 flex items-center justify-center">
+          <Loader2 size={20} className="animate-spin text-gray-600" />
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -1997,6 +1997,75 @@ app.get("/api/v2/admin/stats", requireAdmin, async (_req, res) => {
   }
 });
 
+// GET /api/v2/admin/stats/charts — purchase statistics for the dashboard
+// charts (last 14 days). Returns:
+//   daily:       14 buckets { date, count, amount }
+//   byService:   [{ service_type, count, amount }]
+//   byProvider:  [{ provider, count, amount }]  (provider may be a carrier name)
+//   totals:      { purchases, volume, success, failed, refunded }
+app.get("/api/v2/admin/stats/charts", requireAdmin, async (_req, res) => {
+  try {
+    const since = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
+    const { data: rows, error } = await supabase
+      .from("transactions")
+      .select("service_type, provider, status, amount, created_at")
+      .gte("created_at", since);
+    if (error) throw error;
+
+    // 14 daily buckets (oldest first).
+    const dayMap = {};
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000);
+      const key = d.toISOString().slice(0, 10);
+      dayMap[key] = { date: key, count: 0, amount: 0 };
+      days.push(dayMap[key]);
+    }
+
+    const byService = {};
+    const byProvider = {};
+    const totals = { purchases: 0, volume: 0, success: 0, failed: 0, refunded: 0 };
+
+    for (const r of rows || []) {
+      const key = (r.created_at || "").slice(0, 10);
+      if (dayMap[key]) {
+        dayMap[key].count++;
+        dayMap[key].amount += Number(r.amount || 0);
+      }
+
+      const svc = (r.service_type || "other").toLowerCase();
+      byService[svc] = byService[svc] || { service_type: svc, count: 0, amount: 0 };
+      byService[svc].count++;
+      byService[svc].amount += Number(r.amount || 0);
+
+      const prov = (r.provider || "unknown").toUpperCase();
+      byProvider[prov] = byProvider[prov] || { provider: prov, count: 0, amount: 0 };
+      byProvider[prov].count++;
+      byProvider[prov].amount += Number(r.amount || 0);
+
+      totals.purchases++;
+      totals.volume += Number(r.amount || 0);
+      const st = (r.status || "").toLowerCase();
+      if (st === "successful") totals.success++;
+      else if (st === "failed") totals.failed++;
+      else if (st === "refunded") totals.refunded++;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        daily: days,
+        byService: Object.values(byService).sort((a, b) => b.count - a.count),
+        byProvider: Object.values(byProvider).sort((a, b) => b.count - a.count),
+        totals,
+      },
+    });
+  } catch (err) {
+    console.error("❌ Admin charts error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // GET /api/v2/admin/providers — current routing state
 app.get("/api/v2/admin/providers", requireAdmin, async (_req, res) => {
   try {
@@ -2171,6 +2240,7 @@ app.get("/api/v2/admin/transactions", requireAdmin, async (req, res) => {
     const offset = (page - 1) * limit;
     const statusFilter = (req.query.status || "").trim();
     const typeFilter = (req.query.service_type || "").trim();
+    const search = (req.query.search || "").trim();
 
     // NOTE: no PostgREST embed here — the transactions table has NO foreign
     // key on user_id, so `profiles:user_id(...)` fails with "Could not find a
@@ -2189,6 +2259,24 @@ app.get("/api/v2/admin/transactions", requireAdmin, async (req, res) => {
 
     if (statusFilter) query = query.eq("status", statusFilter);
     if (typeFilter) query = query.eq("service_type", typeFilter);
+
+    // Search matches the recipient phone OR the customer's email / phone
+    // number. PostgREST filter values must not contain its DSL delimiters,
+    // so strip them before interpolating.
+    if (search) {
+      const clean = search.replace(/[(),"'\\]/g, " ").replace(/\s+/g, " ").trim();
+      if (clean) {
+        const { data: profs } = await supabase
+          .from("profiles")
+          .select("id")
+          .or(`email.ilike.%${clean}%,phone_number.ilike.%${clean}%`)
+          .limit(200);
+        const ids = (profs || []).map((p) => p.id).filter(Boolean);
+        const conds = [`recipient.ilike.%${clean}%`];
+        if (ids.length) conds.push(`user_id.in.(${ids.join(",")})`);
+        query = query.or(conds.join(","));
+      }
+    }
 
     const { data: txns, count, error } = await query;
     if (error) throw error;

@@ -1,5 +1,5 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, ArrowLeftRight, Wifi, LogOut, Shield, Menu, Router } from 'lucide-react'
+import { NavLink, Outlet } from 'react-router-dom'
+import { LayoutDashboard, Users, ArrowLeftRight, Wifi, LogOut, Shield, Menu, Router, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useState } from 'react'
 
@@ -11,53 +11,90 @@ const navItems = [
   { to: '/plans',       icon: Wifi,             label: 'Plans' },
 ]
 
+const STORAGE_KEY = 'dreamhatcher.admin.sidebar'
+
 export default function Layout() {
   const { signOut } = useAuth()
-  const navigate = useNavigate()
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(STORAGE_KEY) === 'collapsed' } catch { return false }
+  })
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  const handleLogout = () => {
-    signOut()
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev
+      try { localStorage.setItem(STORAGE_KEY, next ? 'collapsed' : 'expanded') } catch {}
+      return next
+    })
   }
 
+  const handleLogout = () => signOut()
+
+  const navLinkClass = ({ isActive }) =>
+    `flex items-center ${collapsed ? 'justify-center px-0 mx-2' : 'gap-3 px-4 mx-2'} py-2.5 rounded-lg text-sm font-medium transition-all ${
+      isActive
+        ? 'bg-brand-600/15 text-brand-400 border border-brand-500/20'
+        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
+    }`
+
   const Sidebar = () => (
-    <nav className="flex flex-col gap-1">
-      <div className="flex items-center gap-3 px-4 py-5 mb-2">
-        <div className="p-2 rounded-lg bg-brand-600/20">
-          <Shield size={22} className="text-brand-400" />
+    <nav className="flex flex-col gap-1 h-full">
+      {/* Brand */}
+      <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} gap-2 px-3 py-4 mb-2`}>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2 rounded-lg bg-brand-600/20 shrink-0">
+            <Shield size={22} className="text-brand-400" />
+          </div>
+          {!collapsed && (
+            <div className="min-w-0">
+              <h1 className="text-base font-bold text-gray-100 leading-tight truncate">Dreamhatcher</h1>
+              <p className="text-[11px] text-gray-500 uppercase tracking-wider">Admin Panel</p>
+            </div>
+          )}
         </div>
-        <div>
-          <h1 className="text-base font-bold text-gray-100 leading-tight">Dreamhatcher</h1>
-          <p className="text-[11px] text-gray-500 uppercase tracking-wider">Admin Panel</p>
-        </div>
+        {!collapsed && (
+          <button
+            onClick={toggleCollapsed}
+            className="p-1 rounded-lg text-gray-500 hover:text-gray-200 hover:bg-gray-800/60 transition-all"
+            title="Collapse sidebar"
+          >
+            <ChevronsLeft size={18} />
+          </button>
+        )}
       </div>
 
+      {/* Nav */}
       {navItems.map(({ to, icon: Icon, label }) => (
         <NavLink
           key={to}
           to={to}
           end={to === '/'}
           onClick={() => setMobileOpen(false)}
-          className={({ isActive }) =>
-            `flex items-center gap-3 px-4 py-2.5 mx-2 rounded-lg text-sm font-medium transition-all ${
-              isActive
-                ? 'bg-brand-600/15 text-brand-400 border border-brand-500/20'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50'
-            }`
-          }
+          className={navLinkClass}
+          title={collapsed ? label : undefined}
         >
-          <Icon size={18} />
-          {label}
+          <Icon size={18} className="shrink-0" />
+          {!collapsed && label}
         </NavLink>
       ))}
 
-      <div className="mt-auto pt-4 border-t border-gray-800 mx-4">
+      {/* Footer */}
+      <div className="mt-auto pt-4 border-t border-gray-800 mx-4 space-y-1">
+        <button
+          onClick={toggleCollapsed}
+          className={`flex items-center ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'} w-full py-2.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 transition-all`}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+          {!collapsed && 'Collapse'}
+        </button>
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+          className={`flex items-center ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'} w-full py-2.5 rounded-lg text-sm text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all`}
+          title="Sign Out"
         >
           <LogOut size={18} />
-          Sign Out
+          {!collapsed && 'Sign Out'}
         </button>
       </div>
     </nav>
@@ -65,12 +102,16 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Desktop sidebar */}
-      <aside className="hidden lg:flex w-64 flex-col bg-gray-900/80 border-r border-gray-800 shrink-0">
+      {/* Desktop sidebar — collapsible to an icon rail so the content area widens */}
+      <aside
+        className={`hidden lg:flex flex-col bg-gray-900/80 border-r border-gray-800 shrink-0 transition-[width] duration-300 ease-in-out ${
+          collapsed ? 'w-[68px]' : 'w-64'
+        }`}
+      >
         <Sidebar />
       </aside>
 
-      {/* Mobile sidebar overlay */}
+      {/* Mobile sidebar overlay (always full width) */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setMobileOpen(false)}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
