@@ -407,34 +407,39 @@ async function creditWallet(userId, amount) {
   return Number(data);
 }
 
-// Bigisub can answer a purchase request with an HTTP error OR with an HTTP 200
-// that still means failure. Failure indicators are inconsistent across
-// endpoints and can be nested inside `data` (e.g. the outer wrapper says
-// success but data.status is "failed"), so walk the whole response looking for
-// any failure signal. If nothing indicates failure, treat the order as placed.
+// Detects failure signals in a provider purchase response. A provider can
+// answer with an HTTP error OR with an HTTP 200/201 that still means failure
+// (Bigisub nests failure inside data; Alrahuz returns HTTP 201 with
+// `"Status": "failed"` — note the capital S — and an `api_response` string
+// like "Invalid airtel phone number"). We must catch EVERY shape: a missed
+// rejection means the user is debited, told it succeeded, and gets nothing.
+// Detection is CASE-INSENSITIVE and walks nested `data`. If nothing indicates
+// failure, the order is treated as placed.
+const FAILURE_KEY_HINTS = ["success", "status", "error", "code", "status_code", "statuscode", "api_response", "detail", "message"];
+const FAILURE_VALUE_HINTS = ["false", "0", "no", "failed", "error", "failure", "fail", "declined", "cancelled", "invalid"];
+
 function bigiFailed(node, depth = 0) {
   if (!node || depth > 3) return false;
 
   if (typeof node === "string") {
-    return ["failed", "error", "failure", "fail", "declined", "cancelled"].includes(node.toLowerCase());
+    return FAILURE_VALUE_HINTS.includes(node.toLowerCase());
   }
   if (typeof node !== "object" || Array.isArray(node)) return false;
 
   const isFailureValue = (v) => {
     if (v === false) return true;
     if (typeof v === "number") return v >= 400;
-    if (typeof v === "string") {
-      return ["false", "0", "no", "failed", "error", "failure", "fail", "declined", "cancelled"].includes(v.toLowerCase());
-    }
+    if (typeof v === "string") return FAILURE_VALUE_HINTS.includes(v.toLowerCase());
     return false;
   };
 
-  if ("success" in node && isFailureValue(node.success)) return true;
-  if ("status" in node && isFailureValue(node.status)) return true;
-  if ("error" in node && node.error) return true;
-  if ("code" in node && typeof node.code === "number" && node.code >= 400) return true;
-  if ("status_code" in node && typeof node.status_code === "number" && node.status_code >= 400) return true;
-  if ("statusCode" in node && typeof node.statusCode === "number" && node.statusCode >= 400) return true;
+  for (const key of Object.keys(node)) {
+    const lk = key.toLowerCase();
+    if (!FAILURE_KEY_HINTS.includes(lk)) continue;
+    const v = node[key];
+    if (lk === "error" && v) return true; // any error field present = failure
+    if (isFailureValue(v)) return true;
+  }
 
   const nested = node.data;
   if (nested && typeof nested === "object") {
@@ -450,6 +455,7 @@ function bigiErrorMessage(data, fallback) {
   return (
     data?.message ||
     data?.detail ||
+    data?.api_response ||
     (typeof data?.error === "string" ? data.error : data?.error?.message) ||
     fallback
   );
@@ -950,9 +956,22 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
     }
     // 5xx / timeout / connection error: the provider may STILL have processed
     // the order (it has delivered airtime while returning "An error occurred…").
-    // We already debited, so keep the charge and let the user verify delivery
-    // — refunding blindly would hand out free airtime.
+    // Keep the charge (refunding blindly could hand out free airtime) but ALWAYS
+    // record the debited-but-unconfirmed order so it is never invisible to the
+    // admin, who can refund it from the ledger if delivery never lands.
     console.error("⚠️ Order outcome uncertain:", err.response?.data || err.message);
+    if (ctx) {
+      await logTx({
+        user_id: ctx.userId,
+        title: "Airtime — Outcome Pending",
+        service_type: "airtime",
+        amount: ctx.price,
+        recipient: String(req.body.phone_number || "").trim(),
+        status: "pending",
+        reference: newTxRef("PEND"),
+        provider: canonicalNetworkName(req.body.network)
+      });
+    }
     return res.json({
       success: true,
       message: "Request submitted — delivery may take a few minutes. If you don't receive it, contact support for a refund."
@@ -1169,7 +1188,22 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
       });
     }
     // 5xx / timeout / connection error — order may still have been processed.
+    // Keep the charge (refunding blindly could hand out free data) but ALWAYS
+    // record the debited-but-unconfirmed order so it is never invisible to the
+    // admin, who can refund it from the ledger if delivery never lands.
     console.error("⚠️ Data outcome uncertain:", JSON.stringify(provError || err.message, null, 2));
+    if (ctx) {
+      await logTx({
+        user_id: ctx.userId,
+        title: "Data Purchase — Outcome Pending",
+        service_type: "data",
+        amount: ctx.price,
+        recipient: String(req.body.phone_number || "").trim(),
+        status: "pending",
+        reference: newTxRef("PEND"),
+        provider: canonicalNetworkName(req.body.network)
+      });
+    }
     return res.json({
       success: true,
       message: "Data request submitted — delivery may take a few minutes. If you don't receive it, contact support for a refund."
