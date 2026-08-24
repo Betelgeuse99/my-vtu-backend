@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../components/Toast'
+import CarrierBadge from '../components/CarrierBadge'
 import { Wallet, Users, ArrowLeftRight, TrendingDown, Loader2, RefreshCw, Zap, Wifi, Tv, Lightbulb, GraduationCap, AlertTriangle } from 'lucide-react'
 
 const serviceIcons = {
@@ -270,9 +271,7 @@ export default function Dashboard() {
                     </td>
                     <td className="px-5 py-3">{statusBadge(tx.status)}</td>
                     <td className="px-5 py-3">
-                      {tx.provider
-                        ? <span className={`text-xs font-medium ${tx.provider === 'alrahuz' ? 'text-purple-400' : 'text-brand-400'}`}>{tx.provider}</span>
-                        : <span className="text-xs text-gray-600">—</span>}
+                      <CarrierBadge provider={tx.provider} />
                     </td>
                     <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
                       {tx.created_at ? new Date(tx.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}

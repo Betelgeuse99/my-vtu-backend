@@ -100,6 +100,42 @@ function getCableCode(provider) {
   return clean;
 }
 
+/**
+ * CANONICAL TELECOM CARRIER — maps a Bigisub network id/slug to the
+ * end-user carrier name ("MTN", "GLO", "AIRTEL", "9MOBILE").
+ *
+ * This is what MUST be stored in transactions.provider. The app and admin
+ * dashboard render the carrier's logo from this column, so storing the
+ * upstream gateway's brand ("bigisub" / "alrahuz") here is what made the UI
+ * show vendor branding instead of the telecom logo. Keep the id keys in sync
+ * with getNetworkId(): Bigisub uses 2=GLO / 3=AIRTEL (the Android registry
+ * has them swapped), so both helpers must agree on that translation.
+ */
+function canonicalNetworkName(net) {
+  // Numeric keys are the APP's network ids (TransactionManager.NETWORKS:
+  // 2=AIRTEL, 3=GLO — the same translation getNetworkId applies, where app
+  // id 2 is Bigisub's airtel id 3 and app id 3 is Bigisub's glo id 2).
+  // Slug keys map straight to the carrier. Airtime/recharge-pin send slugs;
+  // data sends the app's numeric id.
+  const map = {
+    "1": "MTN", "mtn": "MTN",
+    "2": "AIRTEL", "airtel": "AIRTEL",
+    "3": "GLO", "glo": "GLO",
+    "4": "9MOBILE", "9mobile": "9MOBILE", "eti": "9MOBILE"
+  };
+  return map[String(net || "").toLowerCase().trim()] || null;
+}
+
+/** Canonical cable brand for the transactions.provider column (logo key). */
+function cableDisplayName(provider) {
+  const clean = String(provider || "").toLowerCase().trim();
+  if (clean.includes("gotv")) return "GOTV";
+  if (clean.includes("dstv")) return "DSTV";
+  if (clean.includes("star")) return "STARTIMES";
+  if (clean.includes("show")) return "SHOWMAX";
+  return String(provider || "").trim().toUpperCase();
+}
+
 function formatLocalPhone(phone) {
   let clean = String(phone || "").replace(/[^0-9]/g, "");
   if (clean.startsWith("234") && clean.length > 10) {
@@ -189,14 +225,41 @@ function planProviderId(planRow, provider) {
 }
 
 /**
- * Writes an entry into the transactions ledger. The Android app reads this
+ * IDEMPOTENT write to the transactions ledger. The Android app reads this
  * table directly from Supabase for purchase history, and the admin dashboard
  * ledger reads it via /api/v2/admin/transactions — logging here keeps both in
  * sync with wallet movements. Failures inside logTx must never break a
  * purchase response, so everything is caught.
+ *
+ * Idempotency: the transactions table has a UNIQUE index on (user_id,
+ * reference), so a second insert for the same purchase is a hard DB error —
+ * never a silent duplicate. This method therefore:
+ *   1. finds the existing row by (user_id, reference) and PATCHES
+ *      status/provider/title onto it (preserves created_at, so sort order is
+ *      untouched), or
+ *   2. inserts only when no row exists yet, and
+ *   3. if a concurrent writer (the app client, a webhook retry) wins the race
+ *      and the insert trips the unique index (23505), re-resolves and patches
+ *      instead of failing or duplicating.
  */
 async function logTx({ user_id, title, service_type, amount, recipient, status, reference, provider }) {
   try {
+    const ref = reference || null;
+    if (ref) {
+      const { data: existing } = await supabase
+        .from("transactions")
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("reference", ref)
+        .maybeSingle();
+      if (existing) {
+        const patch = { status: status || "successful" };
+        if (provider) patch.provider = provider;
+        if (title) patch.title = String(title);
+        await supabase.from("transactions").update(patch).eq("id", existing.id);
+        return;
+      }
+    }
     await supabase.from("transactions").insert({
       user_id,
       title: String(title || service_type || "Transaction"),
@@ -204,10 +267,30 @@ async function logTx({ user_id, title, service_type, amount, recipient, status, 
       amount: Number(amount) || 0,
       recipient: String(recipient || "").trim(),
       status: status || "successful",
-      reference,
+      reference: ref,
       provider: provider || null,
     });
   } catch (err) {
+    // Lost a race against another writer: the unique index rejected our
+    // insert (code 23505 = unique_violation). Patch the winner instead.
+    if (reference && err?.code === "23505") {
+      try {
+        const { data: existing } = await supabase
+          .from("transactions")
+          .select("id")
+          .eq("user_id", user_id)
+          .eq("reference", reference)
+          .maybeSingle();
+        if (existing) {
+          const patch = { status: status || "successful" };
+          if (provider) patch.provider = provider;
+          await supabase.from("transactions").update(patch).eq("id", existing.id);
+        }
+      } catch (e2) {
+        console.warn("⚠️ transactions idempotent-repatch failed:", e2.message);
+      }
+      return;
+    }
     console.warn("⚠️ transactions log failed:", err.message);
   }
 }
@@ -697,13 +780,30 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
     if (!payment) {
       return res.status(200).json({ success: true, message: "Payment not tracked" });
     }
-    if (payment.status === "success") {
-      return res.status(200).json({ success: true, message: "Already processed" });
-    }
-
     const paymentAmount = Number(payment.amount);
     if (!paymentAmount || paymentAmount <= 0) {
       return res.status(500).json({ success: false, message: "Invalid payment amount" });
+    }
+
+    // ATOMIC CLAIM: flip the payment to "success" ONLY if it is still pending.
+    // This single conditional UPDATE is the idempotency guard — exactly one
+    // webhook delivery (retries and concurrent deliveries included) wins the
+    // claim; repeat deliveries match 0 rows and stop here. Without it, two
+    // simultaneous deliveries of the same webhook would BOTH pass the read
+    // above and credit the wallet twice.
+    const { data: claimed, error: claimError } = await supabase
+      .from("payments")
+      .update({ status: "success", squad_response: payload })
+      .eq("id", payment.id)
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle();
+    if (claimError) {
+      console.error("❌ Failed to claim payment:", claimError.message);
+      return res.status(500).json({ success: false, message: "Failed to update payment" });
+    }
+    if (!claimed) {
+      return res.status(200).json({ success: true, message: "Already processed" });
     }
 
     // Atomic credit via the credit_wallet RPC: self-heals the wallet row,
@@ -714,26 +814,25 @@ app.post("/api/v2/webhooks/squad", async (req, res) => {
       p_description: "Wallet funding via Squad - Verified"
     });
     if (creditError || newBalance === null || newBalance === undefined) {
+      // Revert the claim so Squad's automatic retry can process it again —
+      // a failed credit must never leave the payment stuck as "success".
       console.error("❌ Wallet Update Error:", creditError?.message || "0 rows updated");
+      await supabase.from("payments").update({ status: "pending" }).eq("id", payment.id).eq("status", "success");
       return res.status(500).json({ success: false, message: "Failed to update wallet row" });
     }
 
-    await supabase.from("payments").update({ status: "success", squad_response: payload }).eq("id", payment.id);
-
-    // Purchase-history row (schema matches the transactions table).
-    try {
-      await supabase.from("transactions").insert({
-        user_id: payment.user_id,
-        title: "Wallet Funding",
-        service_type: "funding",
-        amount: paymentAmount,
-        recipient: "Squad",
-        status: "successful",
-        reference: txRef
-      });
-    } catch (txErr) {
-      console.warn("transactions insert failed:", txErr.message);
-    }
+    // Purchase-history row (schema matches the transactions table). Uses the
+    // same idempotent logTx (find-by-reference → patch) so a webhook retry or
+    // a concurrent writer can never create a second funding row.
+    await logTx({
+      user_id: payment.user_id,
+      title: "Wallet Funding",
+      service_type: "funding",
+      amount: paymentAmount,
+      recipient: "Squad",
+      status: "successful",
+      reference: txRef
+    });
 
     console.log("✅ Wallet funded: " + payment.user_id + " +₦" + paymentAmount + " (New Balance: ₦" + newBalance + ")");
     return res.json({ success: true, message: "Wallet funded successfully", balance: newBalance });
@@ -796,7 +895,7 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
         recipient: String(phone_number).trim(),
         status: "failed",
         reference: txRef,
-        provider: "bigisub"
+        provider: canonicalNetworkName(network)
       });
       return res.status(400).json({
         success: false,
@@ -813,10 +912,12 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
       recipient: String(phone_number).trim(),
       status: "successful",
       reference: txRef,
-      provider: "bigisub"
+      provider: canonicalNetworkName(network)
     });
     console.log("✅ Airtime: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
-    res.json({ success: true, message: "Airtime top-up successful", data: response.data, balance: newBalance });
+    // reference is the idempotency key the app uses to find-and-patch this
+    // row instead of inserting a duplicate.
+    res.json({ success: true, message: "Airtime top-up successful", data: response.data, balance: newBalance, reference: txRef });
   } catch (err) {
     console.error("❌ Airtime Error:", err.response?.data || err.message);
     // try-block consts are invisible to catch, so the debit context comes
@@ -995,7 +1096,8 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
         recipient: String(phone_number).trim(),
         status: "failed",
         reference: txRef,
-        provider: fulfillProvider
+        // The CARRIER (MTN/AIRTEL/GLO/9MOBILE), never the gateway brand.
+        provider: canonicalNetworkName(network)
       });
       return res.status(400).json({
         success: false,
@@ -1013,7 +1115,8 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
       recipient: String(phone_number).trim(),
       status: "successful",
       reference: txRef,
-      provider: fulfillProvider
+      // The CARRIER (MTN/AIRTEL/GLO/9MOBILE), never the gateway brand.
+      provider: canonicalNetworkName(network)
     });
 
     console.log("✅ Data purchase (" + fulfillProvider + "): user " + userId + " plan " + providerPlanId + " -₦" + price + " (balance ₦" + newBalance + ")");
@@ -1041,7 +1144,7 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
           recipient: "",
           status: "failed",
           reference: newTxRef("FAIL"),
-          provider: null
+          provider: canonicalNetworkName(req.body.network)
         });
       }
       console.error("❌ Data rejected by provider:", JSON.stringify(provError || err.message, null, 2));
@@ -1154,7 +1257,7 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
         recipient: String(card_no).trim(),
         status: "failed",
         reference: txRef,
-        provider: "bigisub"
+        provider: cableDisplayName(cable_type || provider)
       });
       return res.status(400).json({
         success: false,
@@ -1171,10 +1274,10 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
       recipient: String(card_no).trim(),
       status: "successful",
       reference: txRef,
-      provider: "bigisub"
+      provider: cableDisplayName(cable_type || provider)
     });
     console.log("✅ Cable: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
-    res.json({ success: true, message: "Cable subscription successful", data: response.data, balance: newBalance });
+    res.json({ success: true, message: "Cable subscription successful", data: response.data, balance: newBalance, reference: txRef });
   } catch (err) {
     // try-block consts are invisible to catch, so the debit context comes
     // from the request (stashed right after the debit succeeded).
@@ -1307,7 +1410,7 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
         recipient: String(meter_no).trim(),
         status: "failed",
         reference: txRef,
-        provider: "bigisub"
+        provider: String(company).trim().toUpperCase()
       });
       return res.status(400).json({
         success: false,
@@ -1324,13 +1427,13 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
       recipient: String(meter_no).trim(),
       status: "successful",
       reference: txRef,
-      provider: "bigisub"
+      provider: String(company).trim().toUpperCase()
     });
     console.log("✅ Electricity: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     // The Android app shows the recharge token on the receipt — surface Bigisub's
     // token (whatever shape it arrives in) so the payment screen can display it.
     const token = response.data?.data?.token || response.data?.token || null;
-    res.json({ success: true, message: "Electricity bill paid", data: response.data, token: token, balance: newBalance });
+    res.json({ success: true, message: "Electricity bill paid", data: response.data, token: token, balance: newBalance, reference: txRef });
   } catch (err) {
     // try-block consts are invisible to catch, so the debit context comes
     // from the request (stashed right after the debit succeeded).
@@ -1420,7 +1523,7 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
         recipient: String(network || "").trim(),
         status: "failed",
         reference: txRef,
-        provider: "bigisub"
+        provider: canonicalNetworkName(network)
       });
       return res.status(400).json({
         success: false,
@@ -1437,10 +1540,10 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
       recipient: String(network || "").trim(),
       status: "successful",
       reference: txRef,
-      provider: "bigisub"
+      provider: canonicalNetworkName(network)
     });
     console.log("✅ Recharge PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
-    res.json({ success: true, message: "Recharge PINs generated", data: response.data, balance: newBalance });
+    res.json({ success: true, message: "Recharge PINs generated", data: response.data, balance: newBalance, reference: txRef });
   } catch (err) {
     // try-block consts are invisible to catch, so the debit context comes
     // from the request (stashed right after the debit succeeded).
@@ -1525,7 +1628,7 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
         recipient: String(exam).trim(),
         status: "failed",
         reference: txRef,
-        provider: "bigisub"
+        provider: null
       });
       return res.status(400).json({
         success: false,
@@ -1542,7 +1645,7 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
       recipient: String(exam).trim(),
       status: "successful",
       reference: txRef,
-      provider: "bigisub"
+      provider: null
     });
     console.log("✅ Exam PIN: user " + userId + " -₦" + price + " (balance ₦" + newBalance + ")");
     // The Android app shows the purchased PINs in a dialog — extract them from
@@ -1552,7 +1655,7 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
       response.data?.pins ||
       rawData?.pins ||
       (Array.isArray(rawData) ? rawData : []);
-    res.json({ success: true, message: "Exam PINs generated", data: response.data, pins: pins, balance: newBalance });
+    res.json({ success: true, message: "Exam PINs generated", data: response.data, pins: pins, balance: newBalance, reference: txRef });
   } catch (err) {
     // try-block consts are invisible to catch, so the debit context comes
     // from the request (stashed right after the debit succeeded).
@@ -1927,7 +2030,12 @@ app.get("/api/v2/admin/transactions", requireAdmin, async (req, res) => {
     let query = supabase
       .from("transactions")
       .select("*", { count: "exact" })
+      // Newest first. The `id` tiebreaker keeps ordering stable when multiple
+      // rows share the same created_at (same-second writes) — without it,
+      // Postgres can return equal timestamps in arbitrary order and a fresh
+      // transaction can appear to jump to the bottom of the ledger.
       .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (statusFilter) query = query.eq("status", statusFilter);

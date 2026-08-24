@@ -3,6 +3,7 @@ import { api } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/Toast'
 import ConfirmModal from '../components/ConfirmModal'
+import CarrierBadge from '../components/CarrierBadge'
 import { ChevronLeft, ChevronRight, Loader2, RotateCcw, Filter } from 'lucide-react'
 
 const statusBadge = (status) => {
@@ -165,11 +166,9 @@ export default function Transactions() {
                       <div>
                         <p className="font-medium text-gray-200 capitalize">{tx.service_type || '—'}</p>
                         <p className="text-xs text-gray-500 truncate max-w-[150px]">{tx.title}</p>
-                        {tx.provider && (
-                          <span className={`text-[10px] uppercase tracking-wide font-medium ${tx.provider === 'alrahuz' ? 'text-purple-400' : 'text-brand-400'}`}>
-                            {tx.provider}
-                          </span>
-                        )}
+                        <div className="mt-1">
+                          <CarrierBadge provider={tx.provider} />
+                        </div>
                       </div>
                     </td>
                     <td className="px-5 py-3">
