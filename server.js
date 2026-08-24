@@ -1576,14 +1576,36 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
 // -------------------------------------------------------------
 
 // GET /api/v2/admin/keycheck — reports the role claim of the key this
-// server is actually using. Definitive diagnosis for RLS-blindness.
-app.get("/api/v2/admin/keycheck", requireAdmin, (_req, res) => {
+// server is actually using, AND runs the real stats queries so we can see
+// exactly what the server's own client returns, errors included.
+app.get("/api/v2/admin/keycheck", requireAdmin, async (_req, res) => {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
   let role = "unknown";
   try {
     role = JSON.parse(Buffer.from(key.split(".")[1], "base64").toString()).role || "unknown";
   } catch { role = "malformed"; }
-  res.json({ success: true, key_present: !!key, key_role: role });
+
+  const probe = {};
+  try {
+    const r = await supabase.from("profiles").select("id", { count: "exact", head: true });
+    probe.profiles = { count: r.count, error: r.error?.message || null };
+  } catch (e) { probe.profiles = { threw: e.message }; }
+  try {
+    const r = await supabase.from("wallets").select("user_id, balance").limit(5);
+    probe.wallets = { rows: r.data?.length ?? null, sample: r.data?.slice(0, 2) || null, error: r.error?.message || null };
+  } catch (e) { probe.wallets = { threw: e.message }; }
+  try {
+    const r = await supabase.from("transactions").select("id", { count: "exact", head: true });
+    probe.transactions = { count: r.count, error: r.error?.message || null };
+  } catch (e) { probe.transactions = { threw: e.message }; }
+
+  res.json({
+    success: true,
+    url_host: (() => { try { return new URL(process.env.SUPABASE_URL).host } catch { return null } })(),
+    key_present: !!key,
+    key_role: role,
+    probes: probe,
+  });
 });
 
 async function requireAdmin(req, res, next) {
