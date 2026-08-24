@@ -13,22 +13,19 @@ export function AuthProvider({ children }) {
   const [authReady, setAuthReady] = useState(false)
   const navigate = useNavigate()
 
-  // ── 1. Hydrate session from storage + subscribe to changes ──
+  // ── 1. Hydrate session from Supabase storage + subscribe ──
   useEffect(() => {
-    let idleTimer = null
     let lastActivity = Date.now()
 
-    // Get the existing session from Supabase's internal storage.
-    // This is the ONLY source of truth — no manual localStorage reads.
+    // getSession() reads from Supabase's own localStorage key.
+    // Returns immediately if cached, no network call.
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
       setUser(s?.user ?? null)
       setAuthReady(true)
     })
 
-    // Subscribe to ALL auth state changes: SIGNED_IN, SIGNED_OUT,
-    // TOKEN_REFRESHED, etc. This fires on page refresh (storage rehydration),
-    // on login, on logout, and after automatic token refresh.
+    // Fires on SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, INITIAL_SESSION
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, s) => {
         setSession(s)
@@ -37,7 +34,7 @@ export function AuthProvider({ children }) {
       }
     )
 
-    // ── Idle-logout tracking ──
+    // ── Idle-logout ──
     const markActive = () => { lastActivity = Date.now() }
     ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, markActive, { passive: true }))
 
@@ -52,52 +49,36 @@ export function AuthProvider({ children }) {
       subscription.unsubscribe()
       ACTIVITY_EVENTS.forEach(e => window.removeEventListener(e, markActive))
       clearInterval(checkIdle)
-      if (idleTimer) clearTimeout(idleTimer)
     }
   }, [navigate])
 
-  // ── 2. Sign in via backend, then set the Supabase session ──
+  // ── 2. Sign in via Supabase directly, then verify admin ──
   const signIn = useCallback(async (email, password) => {
     const API_BASE = import.meta.env.VITE_API_BASE || ''
 
-    // Authenticate through the backend (which uses the service-role key)
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    })
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.message || 'Login failed')
-    }
-
-    const body = await res.json()
-    if (!body.success) throw new Error(body.message || 'Login failed')
-
-    const { session: supabaseSession } = body
-    if (!supabaseSession?.access_token) {
-      throw new Error('No session returned from server')
-    }
-
-    // Verify admin access
-    const adminRes = await fetch(`${API_BASE}/api/v2/admin/stats`, {
-      headers: { Authorization: `Bearer ${supabaseSession.access_token}` },
-    })
-    if (!adminRes.ok) {
-      throw new Error('Your account does not have admin access')
-    }
-
-    // Set the session in Supabase's client — this writes to
-    // localStorage under the Supabase key and makes getSession()
-    // return the valid session on future page loads.
-    const { error } = await supabase.auth.setSession({
-      access_token: supabaseSession.access_token,
-      refresh_token: supabaseSession.refresh_token,
+    // Authenticate directly against Supabase Auth (uses the anon key).
+    // No backend round-trip — Supabase handles password verification.
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
     })
     if (error) throw error
+    if (!data?.session?.access_token) {
+      throw new Error('No session returned from Supabase')
+    }
 
-    return body
+    // Verify this user has admin access via our backend
+    const adminRes = await fetch(`${API_BASE}/api/v2/admin/stats`, {
+      headers: { Authorization: `Bearer ${data.session.access_token}` },
+    })
+    if (!adminRes.ok) {
+      const body = await adminRes.json().catch(() => ({}))
+      // Sign out from Supabase since this user is not an admin
+      await supabase.auth.signOut()
+      throw new Error(body.message || 'Your account does not have admin access')
+    }
+
+    return data
   }, [])
 
   // ── 3. Sign out ──

@@ -21,7 +21,8 @@ export default function Login() {
     setLoading(true)
     try {
       const result = await signIn(email.trim(), password.trim())
-      toast.success(`Welcome back, ${result.user?.full_name || 'Admin'}!`)
+      const name = result.user?.user_metadata?.full_name || result.user?.email || 'Admin'
+      toast.success(`Welcome back, ${name}!`)
       navigate('/')
     } catch (err) {
       toast.error(err.message || 'Login failed')
