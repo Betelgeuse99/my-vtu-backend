@@ -21,17 +21,17 @@ const serviceLabels = {
   epin: 'Exam PINs',
 }
 
-function StatCard({ icon: Icon, label, value, color, sub, highlight }) {
+function StatCard({ icon: Icon, label, value, color, sub }) {
   return (
-    <div className={`card group hover:border-brand-300 transition-all ${highlight ? 'border-brand-400/50 ring-1 ring-brand-400/30 bg-brand-50' : ''}`}>
+    <div className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-brand-300 transition-all">
       <div className="flex items-start justify-between mb-3">
         <div className={`p-2.5 rounded-xl ${color}`}>
           <Icon size={20} />
         </div>
       </div>
-      <p className={`tabular-nums ${highlight ? 'text-3xl font-extrabold text-brand-800' : 'text-2xl font-bold text-gray-800'}`}>{value}</p>
-      <p className={`${highlight ? 'text-sm font-semibold text-brand-700 mt-0.5' : 'text-sm text-gray-500 mt-0.5'}`}>{label}</p>
-      {sub && <p className={`${highlight ? 'text-xs font-medium text-brand-600 mt-1' : 'text-xs text-gray-400 mt-1'}`}>{sub}</p>}
+      <p className="text-2xl font-extrabold text-gray-900 tabular-nums">{value}</p>
+      <p className="text-sm font-semibold text-gray-700 mt-1">{label}</p>
+      {sub && <p className="text-xs font-medium text-gray-500 mt-1">{sub}</p>}
     </div>
   )
 }
@@ -39,10 +39,10 @@ function StatCard({ icon: Icon, label, value, color, sub, highlight }) {
 function ProviderBadge({ provider }) {
   const isBigi = provider === 'bigisub'
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
       isBigi
-        ? 'bg-brand-50 text-brand-700 border-brand-200'
-        : 'bg-purple-50 text-purple-700 border-purple-200'
+        ? 'bg-brand-50 text-brand-700 border-brand-300'
+        : 'bg-purple-50 text-purple-700 border-purple-300'
     }`}>
       {isBigi ? 'Bigisub' : 'Alrahuz'}
     </span>
@@ -53,14 +53,13 @@ const CHART_COLORS = ['#0d9488', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#0
 
 function MiniStat({ label, value }) {
   return (
-    <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
-      <p className="text-lg font-bold text-gray-800 tabular-nums">{value}</p>
-      <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+    <div className="p-3 rounded-xl bg-gray-50 border-2 border-gray-200">
+      <p className="text-lg font-bold text-gray-900 tabular-nums">{value}</p>
+      <p className="text-xs font-semibold text-gray-600 mt-0.5">{label}</p>
     </div>
   )
 }
 
-/** Pure-SVG bar chart (histogram) of purchases over the last 14 days. */
 function DailyBarChart({ data }) {
   const rows = data || []
   const max = Math.max(1, ...rows.map((d) => d.count || 0))
@@ -79,10 +78,10 @@ function DailyBarChart({ data }) {
               <title>{`${d.date}: ${d.count} purchases · ₦${Number(d.amount || 0).toLocaleString()}`}</title>
             </rect>
             {(d.count || 0) > 0 && (
-              <text x={x + w / 2} y={y - 4} textAnchor="middle" fontSize="9" fill="#6b7280" className="tabular-nums">{d.count}</text>
+              <text x={x + w / 2} y={y - 4} textAnchor="middle" fontSize="9" fill="#374151" className="tabular-nums">{d.count}</text>
             )}
             {i % 2 === 0 && (
-              <text x={x + w / 2} y={H + 14} textAnchor="middle" fontSize="8" fill="#9ca3af">{d.date.slice(5)}</text>
+              <text x={x + w / 2} y={H + 14} textAnchor="middle" fontSize="8" fill="#6b7280">{d.date.slice(5)}</text>
             )}
           </g>
         )
@@ -91,7 +90,6 @@ function DailyBarChart({ data }) {
   )
 }
 
-/** Pure-SVG donut chart of the service-type breakdown. */
 function DonutChart({ data }) {
   const rows = data || []
   const total = rows.reduce((s, d) => s + (d.count || 0), 0) || 1
@@ -114,15 +112,15 @@ function DonutChart({ data }) {
             return seg
           })}
         </g>
-        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" fontSize="18" fontWeight="bold" fill="#1f2937" className="tabular-nums">{total}</text>
+        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" fontSize="18" fontWeight="bold" fill="#111827" className="tabular-nums">{total}</text>
       </svg>
       <div className="flex-1 w-full min-w-0 space-y-1.5">
         {rows.map((d, i) => (
           <div key={d.service_type || i} className="flex items-center gap-2 text-xs">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
-            <span className="text-gray-500 capitalize flex-1 min-w-0 truncate">{d.service_type || '—'}</span>
-            <span className="text-gray-700 font-medium tabular-nums">{d.count}</span>
-            <span className="text-gray-400 tabular-nums w-10 text-right">{Math.round(((d.count || 0) / total) * 100)}%</span>
+            <span className="text-gray-700 capitalize flex-1 min-w-0 truncate">{d.service_type || '—'}</span>
+            <span className="text-gray-900 font-semibold tabular-nums">{d.count}</span>
+            <span className="text-gray-500 tabular-nums w-10 text-right">{Math.round(((d.count || 0) / total) * 100)}%</span>
           </div>
         ))}
       </div>
@@ -130,7 +128,6 @@ function DonutChart({ data }) {
   )
 }
 
-/** Horizontal bars for the provider / carrier breakdown. */
 function ProviderBars({ data }) {
   const rows = data || []
   const max = Math.max(1, ...rows.map((d) => d.count || 0))
@@ -138,15 +135,15 @@ function ProviderBars({ data }) {
     <div className="space-y-2">
       {rows.map((d) => (
         <div key={d.provider} className="flex items-center gap-3">
-          <span className="text-xs text-gray-500 w-28 truncate">{d.provider || '—'}</span>
-          <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
+          <span className="text-xs font-semibold text-gray-700 w-28 truncate">{d.provider || '—'}</span>
+          <div className="flex-1 h-4 bg-gray-200 rounded overflow-hidden">
             <div
-              className="h-full rounded bg-gradient-to-r from-brand-500 to-brand-400 transition-[width] duration-300"
+              className="h-full rounded bg-gradient-to-r from-brand-600 to-brand-400 transition-[width] duration-300"
               style={{ width: `${Math.max(2, ((d.count || 0) / max) * 100)}%` }}
             />
           </div>
-          <span className="text-xs text-gray-700 tabular-nums w-12 text-right">{d.count}</span>
-          <span className="text-xs text-gray-400 tabular-nums w-24 text-right">₦{Number(d.amount || 0).toLocaleString()}</span>
+          <span className="text-xs font-semibold text-gray-800 tabular-nums w-12 text-right">{d.count}</span>
+          <span className="text-xs text-gray-600 tabular-nums w-24 text-right">₦{Number(d.amount || 0).toLocaleString()}</span>
         </div>
       ))}
     </div>
@@ -155,7 +152,6 @@ function ProviderBars({ data }) {
 
 export default function Dashboard() {
   const toast = useToast()
-
   const [stats, setStats] = useState(null)
   const [providers, setProviders] = useState(null)
   const [recent, setRecent] = useState([])
@@ -166,61 +162,30 @@ export default function Dashboard() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-
     const [statsRes, providersRes, txRes, chartsRes] = await Promise.allSettled([
       api.get('/api/v2/admin/stats'),
       api.get('/api/v2/admin/providers'),
       api.get('/api/v2/admin/transactions?page=1&limit=8'),
       api.get('/api/v2/admin/stats/charts'),
     ])
-
     const newErrors = {}
-
-    if (statsRes.status === 'fulfilled') {
-      setStats(statsRes.value.data?.data ?? null)
-    } else {
-      newErrors.stats = statsRes.reason?.response?.data?.message || statsRes.reason?.message || 'Stats unavailable'
-      console.error('[Dashboard] stats failed:', statsRes.reason?.response?.status, statsRes.reason?.message)
-    }
-
-    if (providersRes.status === 'fulfilled') {
-      setProviders(providersRes.value.data?.data ?? null)
-    } else {
-      newErrors.providers = 'Provider routes unavailable'
-      console.error('[Dashboard] providers failed:', providersRes.reason?.message)
-    }
-
-    if (txRes.status === 'fulfilled') {
-      setRecent(txRes.value.data?.data ?? [])
-    } else {
-      newErrors.recent = txRes.reason?.response?.data?.message || 'Recent transactions unavailable'
-      console.error('[Dashboard] recent transactions failed:', txRes.reason?.message)
-    }
-
-    if (chartsRes.status === 'fulfilled') {
-      setCharts(chartsRes.value.data?.data ?? null)
-    } else {
-      newErrors.charts = chartsRes.reason?.response?.data?.message || 'Statistics charts unavailable'
-      console.error('[Dashboard] charts failed:', chartsRes.reason?.message)
-    }
-
+    if (statsRes.status === 'fulfilled') setStats(statsRes.value.data?.data ?? null)
+    else newErrors.stats = statsRes.reason?.response?.data?.message || statsRes.reason?.message || 'Stats unavailable'
+    if (providersRes.status === 'fulfilled') setProviders(providersRes.value.data?.data ?? null)
+    else newErrors.providers = 'Provider routes unavailable'
+    if (txRes.status === 'fulfilled') setRecent(txRes.value.data?.data ?? [])
+    else newErrors.recent = txRes.reason?.response?.data?.message || 'Recent transactions unavailable'
+    if (chartsRes.status === 'fulfilled') setCharts(chartsRes.value.data?.data ?? null)
+    else newErrors.charts = chartsRes.reason?.response?.data?.message || 'Statistics charts unavailable'
     setErrors(newErrors)
     setLastUpdated(new Date())
     setLoading(false)
   }, [])
 
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
-
-  // Live forever: poll every 15s, unconditionally, while the page is open
-  useEffect(() => {
-    const timer = setInterval(fetchData, 15_000)
-    return () => clearInterval(timer)
-  }, [fetchData])
+  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => { const timer = setInterval(fetchData, 15_000); return () => clearInterval(timer) }, [fetchData])
 
   const fmt = (n) => '₦' + Number(n || 0).toLocaleString('en-NG')
-
   const statusBadge = (status) => {
     const s = (status || '').toLowerCase()
     if (s === 'successful') return <span className="badge-success">Successful</span>
@@ -228,7 +193,6 @@ export default function Dashboard() {
     if (s === 'refunded') return <span className="badge-refunded">Refunded</span>
     return <span className="badge-pending">{status || '—'}</span>
   }
-
   const errorList = Object.values(errors).filter(Boolean)
 
   return (
@@ -236,97 +200,59 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">Platform overview and provider status</p>
+          <p className="text-sm text-gray-600 mt-1">Platform overview and provider status</p>
         </div>
         <div className="flex items-center gap-3">
-          {lastUpdated && (
-            <span className="text-xs text-gray-400">
-              Updated {fmtLagos(lastUpdated, { date: false })}
-            </span>
-          )}
+          {lastUpdated && <span className="text-xs font-medium text-gray-500">Updated {fmtLagos(lastUpdated, { date: false })}</span>}
           <button onClick={fetchData} className="btn-secondary" disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            Refresh
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
         </div>
       </div>
 
       {errorList.length > 0 && (
-        <div className="flex items-start gap-3 px-4 py-3 rounded-lg border border-red-200 bg-red-50">
-          <AlertTriangle size={18} className="text-red-500 shrink-0 mt-0.5" />
-          <div className="text-sm text-red-600 space-y-1">
-            {errorList.map((e, i) => <p key={i}>{e}</p>)}
-          </div>
+        <div className="flex items-start gap-3 px-4 py-3 rounded-lg border-2 border-red-300 bg-red-50">
+          <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
+          <div className="text-sm text-red-700 space-y-1">{errorList.map((e, i) => <p key={i}>{e}</p>)}</div>
         </div>
       )}
 
-      {/* Stats render as soon as they exist — first load shows skeleton spinners */}
       {!stats && loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {[0, 1, 2, 3].map(i => (
-            <div key={i} className="card h-28 flex items-center justify-center">
-              <Loader2 size={20} className="animate-spin text-gray-400" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+          {[0, 1, 2, 3, 4].map(i => (
+            <div key={i} className="bg-white border-2 border-gray-200 rounded-xl h-28 flex items-center justify-center">
+              <Loader2 size={20} className="animate-spin text-brand-500" />
             </div>
           ))}
         </div>
       ) : stats ? (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-            <StatCard
-              icon={Wallet}
-              label="Bigisub Balance"
-              value={fmtNgn(stats.balances?.bigisub)}
-              color="bg-brand-100 text-brand-600"
-              sub="Bigisub vendor credit"
-              highlight
-            />
-            <StatCard
-              icon={Wallet}
-              label="Alrahuz Balance"
-              value={fmtNgn(stats.balances?.alrahuz)}
-              color="bg-purple-100 text-purple-600"
-              sub="Alrahuz data vendor credit"
-            />
-            <StatCard
-              icon={TrendingDown}
-              label="Total Wallet Liability"
-              value={fmtNgn(stats.total_wallet_liability)}
-              color="bg-amber-100 text-amber-600"
-              sub="Sum of all user balances"
-            />
-            <StatCard
-              icon={Users}
-              label="Registered Users"
-              value={Number(stats.total_registered_users || 0).toLocaleString()}
-              color="bg-emerald-100 text-emerald-600"
-            />
-            <StatCard
-              icon={Banknote}
-              label="Revenue Generated"
-              value={fmtNgn(stats.total_revenue)}
-              color="bg-emerald-100 text-emerald-700"
-              sub="Successful purchases only"
-            />
+            <StatCard icon={Wallet} label="Bigisub Balance" value={fmtNgn(stats.balances?.bigisub)} color="bg-brand-100 text-brand-700" sub="Bigisub vendor credit" />
+            <StatCard icon={Wallet} label="Alrahuz Balance" value={fmtNgn(stats.balances?.alrahuz)} color="bg-brand-100 text-brand-700" sub="Alrahuz data vendor credit" />
+            <StatCard icon={TrendingDown} label="Total Wallet Liability" value={fmtNgn(stats.total_wallet_liability)} color="bg-brand-100 text-brand-700" sub="Sum of all user balances" />
+            <StatCard icon={Users} label="Registered Users" value={Number(stats.total_registered_users || 0).toLocaleString()} color="bg-brand-100 text-brand-700" />
+            <StatCard icon={Banknote} label="Revenue Generated" value={fmtNgn(stats.total_revenue)} color="bg-brand-100 text-brand-700" sub="Successful purchases only" />
           </div>
 
           <div className="card">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold text-gray-800">Active Provider Routes</h2>
-                <p className="text-sm text-gray-500">Which provider handles each service</p>
+                <h2 className="text-lg font-bold text-gray-900">Active Provider Routes</h2>
+                <p className="text-sm text-gray-600">Which provider handles each service</p>
               </div>
-              <ArrowLeftRight size={20} className="text-gray-400" />
+              <ArrowLeftRight size={20} className="text-gray-500" />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               {Object.entries(stats.active_routes || providers || {}).map(([svc, prov]) => {
                 const Icon = serviceIcons[svc] || Zap
                 return (
-                  <div key={svc} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-200">
-                    <div className="p-2 rounded-lg bg-white border border-gray-200">
-                      <Icon size={16} className="text-gray-500" />
+                  <div key={svc} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border-2 border-gray-200">
+                    <div className="p-2 rounded-lg bg-white border-2 border-gray-200">
+                      <Icon size={16} className="text-gray-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-gray-500">{serviceLabels[svc] || svc}</p>
+                      <p className="text-xs font-semibold text-gray-700">{serviceLabels[svc] || svc}</p>
                       <ProviderBadge provider={prov} />
                     </div>
                   </div>
@@ -336,35 +262,33 @@ export default function Dashboard() {
           </div>
 
           <div className="card">
-            <p className="text-sm text-gray-500">
+            <p className="text-sm font-semibold text-gray-700">
               Total Transactions:{' '}
-              <span className="text-gray-800 font-semibold">
-                {Number(stats.total_transactions || 0).toLocaleString()}
-              </span>
+              <span className="text-gray-900 font-bold">{Number(stats.total_transactions || 0).toLocaleString()}</span>
             </p>
           </div>
         </>
       ) : null}
 
-      {/* Recent transactions — independent of stats */}
+      {/* Recent transactions */}
       <div className="card overflow-hidden !p-0">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b-2 border-gray-200">
           <div>
-            <h2 className="text-base font-semibold text-gray-800">Recent Transactions</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Latest activity across the platform</p>
+            <h2 className="text-base font-bold text-gray-900">Recent Transactions</h2>
+            <p className="text-xs text-gray-600 mt-0.5">Latest activity across the platform</p>
           </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-gray-500 text-xs uppercase tracking-wider">
-                <th className="px-4 py-2.5">Service</th>
-                <th className="px-4 py-2.5">User</th>
-                <th className="px-4 py-2.5">Phone</th>
-                <th className="px-4 py-2.5 text-right">Amount</th>
-                <th className="px-4 py-2.5">Status</th>
-                <th className="px-4 py-2.5">Provider</th>
-                <th className="px-4 py-2.5">Date</th>
+              <tr className="border-b-2 border-gray-200 text-left text-gray-600 text-xs uppercase tracking-wider">
+                <th className="px-4 py-3 font-bold">Service</th>
+                <th className="px-4 py-3 font-bold">User</th>
+                <th className="px-4 py-3 font-bold">Phone</th>
+                <th className="px-4 py-3 text-right font-bold">Amount</th>
+                <th className="px-4 py-3 font-bold">Status</th>
+                <th className="px-4 py-3 font-bold">Provider</th>
+                <th className="px-4 py-3 font-bold">Date</th>
               </tr>
             </thead>
             <tbody>
@@ -373,35 +297,31 @@ export default function Dashboard() {
                   <Loader2 size={18} className="animate-spin mx-auto text-brand-500" />
                 </td></tr>
               ) : recent.length === 0 ? (
-                <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-500 text-sm">
+                <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-600 text-sm">
                   {errors.recent || 'No transactions yet'}
                 </td></tr>
               ) : (
                 recent.map(tx => (
                   <tr key={tx.id} className="table-row">
-                    <td className="px-4 py-2.5">
+                    <td className="px-4 py-3">
                       <div className="min-w-0">
-                        <p className="font-medium text-gray-800 capitalize">{tx.service_type || '—'}</p>
-                        <p className="text-xs text-gray-500 truncate max-w-[150px]">{tx.title}</p>
+                        <p className="font-bold text-gray-900 capitalize">{tx.service_type || '—'}</p>
+                        <p className="text-xs text-gray-600 truncate max-w-[150px]">{tx.title}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-4 py-3">
                       <div className="min-w-0">
-                        <p className="text-gray-700 text-xs truncate max-w-[160px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
-                        <p className="text-xs text-gray-400 truncate max-w-[220px]">{tx.profiles?.email || ''}</p>
+                        <p className="text-gray-800 text-xs font-medium truncate max-w-[160px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
+                        <p className="text-xs text-gray-500 truncate max-w-[220px]">{tx.profiles?.email || ''}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">{tx.recipient || '—'}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-gray-800 whitespace-nowrap">
+                    <td className="px-4 py-3 text-xs text-gray-700 whitespace-nowrap">{tx.recipient || '—'}</td>
+                    <td className="px-4 py-3 text-right font-mono font-bold text-gray-900 whitespace-nowrap">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
-                    <td className="px-4 py-2.5">{statusBadge(tx.status)}</td>
-                    <td className="px-4 py-2.5">
-                      <CarrierBadge provider={tx.provider} />
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">
-                      {fmtLagos(tx.created_at)}
-                    </td>
+                    <td className="px-4 py-3">{statusBadge(tx.status)}</td>
+                    <td className="px-4 py-3"><CarrierBadge provider={tx.provider} /></td>
+                    <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{fmtLagos(tx.created_at)}</td>
                   </tr>
                 ))
               )}
@@ -410,43 +330,40 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Purchase statistics — below recent transactions */}
+      {/* Purchase statistics */}
       {charts ? (
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-semibold text-gray-800">Purchase Statistics</h2>
-              <p className="text-sm text-gray-500">Last 14 days of platform activity</p>
+              <h2 className="text-lg font-bold text-gray-900">Purchase Statistics</h2>
+              <p className="text-sm text-gray-600">Last 14 days of platform activity</p>
             </div>
-            <BarChart3 size={20} className="text-gray-400" />
+            <BarChart3 size={20} className="text-gray-500" />
           </div>
-
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             <MiniStat label="Purchases" value={Number(charts.totals?.purchases || 0).toLocaleString()} />
             <MiniStat label="Volume" value={fmt(charts.totals?.volume)} />
             <MiniStat label="Successful" value={Number(charts.totals?.success || 0).toLocaleString()} />
             <MiniStat label="Failed" value={Number(charts.totals?.failed || 0).toLocaleString()} />
           </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Purchases per Day</h3>
+              <h3 className="text-sm font-bold text-gray-800 mb-3">Purchases per Day</h3>
               <DailyBarChart data={charts.daily} />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">By Service</h3>
+              <h3 className="text-sm font-bold text-gray-800 mb-3">By Service</h3>
               <DonutChart data={charts.byService} />
             </div>
           </div>
-
           <div className="mt-8">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">By Provider</h3>
+            <h3 className="text-sm font-bold text-gray-800 mb-3">By Provider</h3>
             <ProviderBars data={charts.byProvider} />
           </div>
         </div>
       ) : loading ? (
         <div className="card h-40 flex items-center justify-center">
-          <Loader2 size={20} className="animate-spin text-gray-400" />
+          <Loader2 size={20} className="animate-spin text-gray-500" />
         </div>
       ) : null}
     </div>

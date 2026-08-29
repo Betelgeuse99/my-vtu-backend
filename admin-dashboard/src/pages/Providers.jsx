@@ -26,8 +26,8 @@ function ServiceCard({ service, current, onChange, loading }) {
           <Icon size={20} className="text-gray-500" />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-gray-800">{label}</h3>
-          <p className="text-xs text-gray-500">{desc}</p>
+          <h3 className="text-sm font-bold text-gray-900">{label}</h3>
+          <p className="text-xs text-gray-600">{desc}</p>
         </div>
       </div>
 
@@ -117,7 +117,7 @@ export default function Providers() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Provider Routing</h1>
-          <p className="text-sm text-gray-500 mt-1">Control which VTU provider handles each service</p>
+          <p className="text-sm text-gray-600 mt-1">Control which VTU provider handles each service</p>
         </div>
         <button onClick={fetchRoutes} className="btn-secondary" disabled={loading}>
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -137,8 +137,8 @@ export default function Providers() {
               <div className="flex items-center gap-3 flex-1">
                 <ArrowRightLeft size={20} className="text-gray-400" />
                 <div>
-                  <h2 className="text-base font-semibold text-gray-800">Master Global Switch</h2>
-                  <p className="text-xs text-gray-500">
+                  <h2 className="text-base font-bold text-gray-900">Master Global Switch</h2>
+                  <p className="text-xs text-gray-600">
                     {isGlobalMode
                       ? `All services currently routed through ${globalProvider === 'bigisub' ? 'Bigisub' : 'Alrahuzdata'}`
                       : 'Services are split across providers — use per-service overrides below'}
@@ -179,7 +179,7 @@ export default function Providers() {
 
           {/* Per-Service Overrides */}
           <div>
-            <h2 className="text-base font-semibold text-gray-800 mb-3">Per-Service Overrides</h2>
+            <h2 className="text-base font-bold text-gray-900 mb-3">Per-Service Overrides</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               {VALID_SERVICES.map(svc => (
                 <ServiceCard

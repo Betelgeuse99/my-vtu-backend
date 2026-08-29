@@ -135,7 +135,7 @@ export default function Users() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-          <p className="text-sm text-gray-500 mt-1">{pagination.total} registered users</p>
+          <p className="text-sm text-gray-600 mt-1">{pagination.total} registered users</p>
         </div>
         <div className="relative w-full sm:w-80">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -153,12 +153,12 @@ export default function Users() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-gray-500 text-xs uppercase tracking-wider">
-                <th className="px-5 py-3">User</th>
-                <th className="px-5 py-3">Phone</th>
-                <th className="px-5 py-3 text-right">Balance</th>
-                <th className="px-5 py-3">Role</th>
-                <th className="px-5 py-3 text-right">Action</th>
+              <tr className="border-b-2 border-gray-300 bg-gray-50 text-left text-gray-700 text-xs uppercase tracking-wider">
+                <th className="px-5 py-3 font-bold">User</th>
+                <th className="px-5 py-3 font-bold">Phone</th>
+                <th className="px-5 py-3 text-right font-bold">Balance</th>
+                <th className="px-5 py-3 font-bold">Role</th>
+                <th className="px-5 py-3 text-right font-bold">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -173,12 +173,12 @@ export default function Users() {
                   <tr key={u.id} className="table-row">
                     <td className="px-5 py-3">
                       <div>
-                        <p className="font-medium text-gray-800">{u.full_name || '—'}</p>
-                        <p className="text-xs text-gray-500 truncate max-w-[200px]">{u.email}</p>
+                        <p className="font-bold text-gray-900">{u.full_name || '—'}</p>
+                        <p className="text-xs text-gray-600 truncate max-w-[200px]">{u.email}</p>
                       </div>
                     </td>
-                    <td className="px-5 py-3 text-gray-600">{u.phone_number || '—'}</td>
-                    <td className="px-5 py-3 text-right font-mono text-gray-800">
+                    <td className="px-5 py-3 text-gray-700">{u.phone_number || '—'}</td>
+                    <td className="px-5 py-3 text-right font-mono font-bold text-gray-900">
                       ₦{Number(u.wallet_balance || 0).toLocaleString()}
                     </td>
                     <td className="px-5 py-3">

@@ -118,7 +118,7 @@ export default function Transactions() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
-        <p className="text-sm text-gray-500 mt-1">{pagination.total} total records</p>
+        <p className="text-sm text-gray-600 mt-1">{pagination.total} total records</p>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
@@ -181,15 +181,15 @@ export default function Transactions() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-gray-500 text-xs uppercase tracking-wider">
-                <th className="px-3 py-2.5">Service</th>
-                <th className="px-3 py-2.5">User</th>
-                <th className="px-3 py-2.5">Phone</th>
-                <th className="px-3 py-2.5 text-right">Amount</th>
-                <th className="px-3 py-2.5">Status</th>
-                <th className="px-3 py-2.5">Reference</th>
-                <th className="px-3 py-2.5">Date</th>
-                <th className="px-3 py-2.5 text-right">Action</th>
+              <tr className="border-b-2 border-gray-300 bg-gray-50 text-left text-gray-700 text-xs uppercase tracking-wider">
+                <th className="px-3 py-2.5 font-bold">Service</th>
+                <th className="px-3 py-2.5 font-bold">User</th>
+                <th className="px-3 py-2.5 font-bold">Phone</th>
+                <th className="px-3 py-2.5 text-right font-bold">Amount</th>
+                <th className="px-3 py-2.5 font-bold">Status</th>
+                <th className="px-3 py-2.5 font-bold">Reference</th>
+                <th className="px-3 py-2.5 font-bold">Date</th>
+                <th className="px-3 py-2.5 text-right font-bold">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -204,8 +204,8 @@ export default function Transactions() {
                   <tr key={tx.id} className="table-row">
                     <td className="px-3 py-2.5">
                       <div className="min-w-0">
-                        <p className="font-medium text-gray-800 capitalize">{tx.service_type || '—'}</p>
-                        <p className="text-xs text-gray-500 truncate max-w-[130px]">{tx.title}</p>
+                        <p className="font-bold text-gray-900 capitalize">{tx.service_type || '—'}</p>
+                        <p className="text-xs text-gray-600 truncate max-w-[130px]">{tx.title}</p>
                         <div className="mt-0.5"><CarrierBadge provider={tx.provider} /></div>
                       </div>
                     </td>
@@ -216,7 +216,7 @@ export default function Transactions() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{tx.recipient || '—'}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-gray-800 whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-right font-mono font-bold text-gray-900 whitespace-nowrap">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
                     <td className="px-3 py-2.5">{statusBadge(tx.status)}</td>
