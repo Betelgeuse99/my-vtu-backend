@@ -7,7 +7,6 @@ const networkNames = { 1: 'MTN', 2: 'Glo', 3: 'Airtel', 4: '9mobile' }
 
 function EditRow({ plan, onSave, onCancel, provider }) {
   const [price, setPrice] = useState(plan.retail_price || '')
-  const [alrPrice, setAlrPrice] = useState(plan.alrahuz_retail_price ?? '')
   const [active, setActive] = useState(plan.is_active)
   const [saving, setSaving] = useState(false)
   const toast = useToast()
@@ -19,18 +18,9 @@ function EditRow({ plan, onSave, onCancel, provider }) {
     const maxBuy = Math.max(...buys)
     if (numPrice < maxBuy) return toast.error('Retail price must be ≥ highest buy price')
 
-    let alrOverride = null
-    if (alrPrice !== '' && alrPrice !== null) {
-      alrOverride = Number(alrPrice)
-      if (isNaN(alrOverride)) return toast.error('Alrahuz retail must be a number')
-      if (alrOverride > 0 && Number(plan.alrahuz_buy_price || 0) > 0 && alrOverride < Number(plan.alrahuz_buy_price)) {
-        return toast.error('Alrahuz retail must be ≥ Alrahuz buy price')
-      }
-    }
-
     setSaving(true)
     try {
-      await api.post('/api/v2/admin/plans/update-price', { plan_id: plan.row_id || plan.id, retail_price: numPrice, is_active: active, alrahuz_retail_price: alrOverride })
+      await api.post('/api/v2/admin/plans/update-price', { plan_id: plan.row_id || plan.id, retail_price: numPrice, is_active: active })
       toast.success('Plan updated successfully')
       onSave()
     } catch (err) {
@@ -89,14 +79,6 @@ function EditRow({ plan, onSave, onCancel, provider }) {
         </div>
       </td>
       <td className="px-5 py-3">
-        {plan.alrahuz_plan_id ? (
-          <div className="flex items-center gap-2">
-            <span className="text-gray-500 text-sm">₦</span>
-            <input type="number" value={alrPrice} onChange={e => setAlrPrice(e.target.value)} placeholder="same" className="input !w-24 !py-1.5" />
-          </div>
-        ) : <span className="text-xs text-gray-500">—</span>}
-      </td>
-      <td className="px-5 py-3">
         <button onClick={() => setActive(!active)} className="transition-colors">
           {active ? <ToggleRight size={24} className="text-emerald-500" /> : <ToggleLeft size={24} className="text-gray-300" />}
         </button>
@@ -117,7 +99,7 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
   const isBigi = provider === 'bigisub'
   const providerLabel = isBigi ? 'Bigisub' : 'Alrahuz'
   const headerColor = isBigi ? 'text-brand-700' : 'text-purple-700'
-  const colCount = isBigi ? 6 : 7
+  const colCount = 6
 
   return (
     <div className="space-y-3">
@@ -136,9 +118,6 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
                 <th className="px-5 py-3 font-bold">{providerLabel} Plan ID</th>
                 <th className="px-5 py-3 font-bold">{providerLabel} Buy Price</th>
                 <th className="px-5 py-3 font-bold">Retail Price</th>
-                {provider === 'alrahuz' && (
-                  <th className="px-5 py-3 font-bold" title="Optional per-provider selling price when routed to Alrahuz; empty = same as Retail Price">Alrahuz Retail</th>
-                )}
                 <th className="px-5 py-3 font-bold">Active</th>
                 <th className="px-5 py-3 text-right font-bold">Action</th>
               </tr>
@@ -178,22 +157,13 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
                         </>
                       )}
                       <td className="px-5 py-3 font-mono text-sm font-bold text-gray-900">₦{Number(plan.retail_price || 0).toLocaleString()}</td>
-                      {provider === 'alrahuz' && (
-                        <td className="px-5 py-3 font-mono text-xs font-semibold">
-                          {plan.alrahuz_plan_id
-                            ? (plan.alrahuz_retail_price != null
-                              ? <span className="text-purple-700">₦{Number(plan.alrahuz_retail_price).toLocaleString()}</span>
-                              : <span className="text-gray-500" title="Uses the shared retail price">= retail</span>)
-                            : '—'}
-                        </td>
-                      )}
                       <td className="px-5 py-3">
                         {plan.is_active ? (
                           <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
                             <ToggleRight size={16} /> Active
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500">
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-700">
                             <ToggleLeft size={16} /> Inactive
                           </span>
                         )}

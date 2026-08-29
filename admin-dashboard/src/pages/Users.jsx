@@ -187,7 +187,7 @@ export default function Users() {
                           <Shield size={12} /> Admin
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-400">User</span>
+                        <span className="text-xs text-gray-700">User</span>
                       )}
                     </td>
                     <td className="px-5 py-3 text-right">

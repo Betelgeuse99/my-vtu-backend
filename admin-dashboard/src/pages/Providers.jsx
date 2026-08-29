@@ -42,7 +42,7 @@ function ServiceCard({ service, current, onChange, loading }) {
                 ? p === 'bigisub'
                   ? 'bg-brand-50 text-brand-700 border-brand-200 shadow-sm'
                   : 'bg-purple-50 text-purple-700 border-purple-200 shadow-sm'
-                : 'bg-white text-gray-400 border-gray-200 hover:text-gray-600 hover:border-gray-300'
+                : 'bg-white text-gray-600 border-gray-200 hover:text-gray-800 hover:border-gray-300'
             }`}
           >
             {p === 'bigisub' ? 'Bigisub' : 'Alrahuz'}
@@ -51,7 +51,7 @@ function ServiceCard({ service, current, onChange, loading }) {
       </div>
 
       <div className="mt-3 flex items-center gap-2">
-        <span className="text-xs text-gray-400">Active:</span>
+        <span className="text-xs text-gray-700">Active:</span>
         <span className={`text-xs font-medium ${isBigi ? 'text-brand-600' : 'text-purple-600'}`}>
           {isBigi ? 'Bigisub' : 'Alrahuzdata'}
         </span>
@@ -180,7 +180,7 @@ export default function Providers() {
           {/* Per-Service Overrides */}
           <div>
             <h2 className="text-base font-bold text-gray-900 mb-3">Per-Service Overrides</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {VALID_SERVICES.map(svc => (
                 <ServiceCard
                   key={svc}

@@ -2565,17 +2565,19 @@ app.get("/api/v2/admin/plans/bigisub", requireAdmin, async (req, res) => {
     if (appNetId) query = query.eq("network_id", appNetId);
     const { data: plans, error } = await query;
     if (error) throw error;
-    const formatted = (plans || []).map(p => ({
-      row_id: p.id,
-      volume: p.volume,
-      validity: p.validity,
-      network_id: p.network_id,
-      plan_type: p.plan_type,
-      bigi_plan_id: p.bigi_plan_id,
-      buy_price: p.buy_price,
-      retail_price: p.retail_price,
-      is_active: p.is_active,
-    }));
+    const formatted = (plans || [])
+      .filter(p => /^\d+$/.test(String(p.bigi_plan_id)))
+      .map(p => ({
+        row_id: p.id,
+        volume: p.volume,
+        validity: p.validity,
+        network_id: p.network_id,
+        plan_type: p.plan_type,
+        bigi_plan_id: p.bigi_plan_id,
+        buy_price: p.buy_price,
+        retail_price: p.retail_price,
+        is_active: p.is_active,
+      }));
     res.json({ success: true, provider: "bigisub", data: formatted });
   } catch (err) {
     console.error("❌ Bigisub plans fetch error:", err.message);
@@ -2605,7 +2607,6 @@ app.get("/api/v2/admin/plans/alrahuz", requireAdmin, async (req, res) => {
       alrahuz_plan_id: p.alrahuz_plan_id,
       alrahuz_buy_price: p.alrahuz_buy_price,
       retail_price: p.retail_price,
-      alrahuz_retail_price: p.alrahuz_retail_price,
       is_active: p.is_active,
     }));
     res.json({ success: true, provider: "alrahuz", data: formatted });

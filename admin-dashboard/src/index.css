@@ -4,7 +4,7 @@
 
 @layer base {
   * { @apply border-gray-300; }
-  body { @apply bg-slate-50 text-gray-900; }
+  body { @apply bg-slate-100 text-gray-900; }
 }
 
 @layer components {
