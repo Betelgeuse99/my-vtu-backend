@@ -312,16 +312,16 @@ export default function Dashboard() {
                     <td className="px-4 py-3">
                       <div className="min-w-0">
                         <p className="text-gray-800 text-xs font-medium truncate max-w-[160px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
-                        <p className="text-xs text-gray-500 truncate max-w-[220px]">{tx.profiles?.email || ''}</p>
+                        <p className="text-xs text-gray-900 truncate max-w-[220px]">{tx.profiles?.email || ''}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-700 whitespace-nowrap">{tx.recipient || '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-900 whitespace-nowrap">{tx.recipient || '—'}</td>
                     <td className="px-4 py-3 text-right font-mono font-bold text-gray-900 whitespace-nowrap">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
                     <td className="px-4 py-3">{statusBadge(tx.status)}</td>
                     <td className="px-4 py-3"><CarrierBadge provider={tx.provider} /></td>
-                    <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{fmtLagos(tx.created_at)}</td>
+                    <td className="px-4 py-3 text-xs text-gray-900 whitespace-nowrap">{fmtLagos(tx.created_at)}</td>
                   </tr>
                 ))
               )}

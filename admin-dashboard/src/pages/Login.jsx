@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/Toast'
-import { Shield, ArrowRight, Loader2, Mail, Lock } from 'lucide-react'
+import { ArrowRight, Loader2, Mail, Lock } from 'lucide-react'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -35,8 +35,8 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-500 mb-4">
-            <Shield size={32} className="text-white" />
+          <div className="inline-flex items-center justify-center mb-4">
+            <img src="/dhtlogo.png" alt="Dreamhatcher Logo" className="w-20 h-20 object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Dreamhatcher Admin</h1>
           <p className="text-sm text-gray-500 mt-1">Sign in to manage your VTU platform</p>

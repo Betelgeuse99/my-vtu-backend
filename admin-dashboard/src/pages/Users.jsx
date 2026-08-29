@@ -119,7 +119,7 @@ export default function Users() {
       const params = new URLSearchParams({ page, limit: 20 })
       if (debouncedSearch) params.set('search', debouncedSearch)
       const res = await api.get(`/api/v2/admin/users?${params}`)
-      setUsers(res.data.data || [])
+      setUsers((res.data.data || []).sort((a, b) => (b.is_admin ? 1 : 0) - (a.is_admin ? 1 : 0)))
       setPagination(res.data.pagination)
     } catch (err) {
       toast.error(err.message)

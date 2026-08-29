@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, Users, ArrowLeftRight, Wifi, LogOut, Shield, Menu, Router, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { LayoutDashboard, Users, ArrowLeftRight, Wifi, LogOut, Menu, Router, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useState } from 'react'
 
@@ -42,9 +42,7 @@ export default function Layout() {
       {/* Brand */}
       <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} gap-2 px-3 py-4 mb-2`}>
         <div className="flex items-center gap-3 min-w-0">
-          <div className="p-2 rounded-lg bg-brand-500 shrink-0">
-            <Shield size={22} className="text-white" />
-          </div>
+          <img src="/dhtlogo.png" alt="Dreamhatcher Logo" className="w-9 h-9 object-contain shrink-0" />
           {!collapsed && (
             <div className="min-w-0">
               <h1 className="text-base font-bold text-gray-900 leading-tight truncate">Dreamhatcher</h1>

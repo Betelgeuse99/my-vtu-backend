@@ -212,16 +212,16 @@ export default function Transactions() {
                     <td className="px-3 py-2.5">
                       <div className="min-w-0">
                         <p className="text-gray-800 text-xs truncate max-w-[150px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
-                        <p className="text-xs text-gray-600 truncate max-w-[210px]">{tx.profiles?.email || ''}</p>
+                        <p className="text-xs text-gray-900 truncate max-w-[210px]">{tx.profiles?.email || ''}</p>
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">{tx.recipient || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-900 whitespace-nowrap">{tx.recipient || '—'}</td>
                     <td className="px-3 py-2.5 text-right font-mono font-bold text-gray-900 whitespace-nowrap">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
                     <td className="px-3 py-2.5">{statusBadge(tx.status)}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700 font-mono truncate max-w-[120px]">{tx.reference || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap">{fmtDate(tx.created_at)}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-900 font-mono truncate max-w-[120px]">{tx.reference || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-gray-900 whitespace-nowrap">{fmtDate(tx.created_at)}</td>
                     <td className="px-3 py-2.5 text-right whitespace-nowrap">
                       {tx.status === 'pending' ? (
                         <button
