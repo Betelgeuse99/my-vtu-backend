@@ -23,15 +23,15 @@ const serviceLabels = {
 
 function StatCard({ icon: Icon, label, value, color, sub, highlight }) {
   return (
-    <div className={`card group hover:border-gray-700 transition-all ${highlight ? 'border-brand-500/50 ring-1 ring-brand-500/30' : ''}`}>
+    <div className={`card group hover:border-brand-300 transition-all ${highlight ? 'border-brand-400/50 ring-1 ring-brand-400/30 bg-brand-50' : ''}`}>
       <div className="flex items-start justify-between mb-3">
         <div className={`p-2.5 rounded-xl ${color}`}>
           <Icon size={20} />
         </div>
       </div>
-      <p className={`tabular-nums ${highlight ? 'text-3xl font-extrabold text-white' : 'text-2xl font-bold text-gray-100'}`}>{value}</p>
-      <p className={`${highlight ? 'text-sm font-semibold text-gray-100 mt-0.5' : 'text-sm text-gray-500 mt-0.5'}`}>{label}</p>
-      {sub && <p className={`${highlight ? 'text-xs font-medium text-gray-300 mt-1' : 'text-xs text-gray-600 mt-1'}`}>{sub}</p>}
+      <p className={`tabular-nums ${highlight ? 'text-3xl font-extrabold text-brand-800' : 'text-2xl font-bold text-gray-800'}`}>{value}</p>
+      <p className={`${highlight ? 'text-sm font-semibold text-brand-700 mt-0.5' : 'text-sm text-gray-500 mt-0.5'}`}>{label}</p>
+      {sub && <p className={`${highlight ? 'text-xs font-medium text-brand-600 mt-1' : 'text-xs text-gray-400 mt-1'}`}>{sub}</p>}
     </div>
   )
 }
@@ -41,20 +41,20 @@ function ProviderBadge({ provider }) {
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
       isBigi
-        ? 'bg-brand-500/15 text-brand-400 border-brand-500/20'
-        : 'bg-purple-500/15 text-purple-400 border-purple-500/20'
+        ? 'bg-brand-50 text-brand-700 border-brand-200'
+        : 'bg-purple-50 text-purple-700 border-purple-200'
     }`}>
       {isBigi ? 'Bigisub' : 'Alrahuz'}
     </span>
   )
 }
 
-const CHART_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316', '#84cc16', '#64748b']
+const CHART_COLORS = ['#0d9488', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#06b6d4', '#f97316', '#84cc16', '#64748b']
 
 function MiniStat({ label, value }) {
   return (
-    <div className="p-3 rounded-xl bg-gray-800/40 border border-gray-800">
-      <p className="text-lg font-bold text-gray-100 tabular-nums">{value}</p>
+    <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+      <p className="text-lg font-bold text-gray-800 tabular-nums">{value}</p>
       <p className="text-xs text-gray-500 mt-0.5">{label}</p>
     </div>
   )
@@ -75,14 +75,14 @@ function DailyBarChart({ data }) {
         const y = H - h
         return (
           <g key={d.date}>
-            <rect x={x} y={y} width={w} height={h} rx={3} fill="#3b82f6" className="opacity-90 hover:opacity-100 transition-opacity">
+            <rect x={x} y={y} width={w} height={h} rx={3} fill="#0d9488" className="opacity-90 hover:opacity-100 transition-opacity">
               <title>{`${d.date}: ${d.count} purchases · ₦${Number(d.amount || 0).toLocaleString()}`}</title>
             </rect>
             {(d.count || 0) > 0 && (
-              <text x={x + w / 2} y={y - 4} textAnchor="middle" fontSize="9" fill="#9ca3af" className="tabular-nums">{d.count}</text>
+              <text x={x + w / 2} y={y - 4} textAnchor="middle" fontSize="9" fill="#6b7280" className="tabular-nums">{d.count}</text>
             )}
             {i % 2 === 0 && (
-              <text x={x + w / 2} y={H + 14} textAnchor="middle" fontSize="8" fill="#6b7280">{d.date.slice(5)}</text>
+              <text x={x + w / 2} y={H + 14} textAnchor="middle" fontSize="8" fill="#9ca3af">{d.date.slice(5)}</text>
             )}
           </g>
         )
@@ -100,7 +100,7 @@ function DonutChart({ data }) {
   return (
     <div className="flex flex-col sm:flex-row items-center gap-6">
       <svg viewBox="0 0 140 140" className="w-32 h-32 shrink-0">
-        <circle cx="70" cy="70" r={R} fill="none" stroke="#1f2937" strokeWidth="15" />
+        <circle cx="70" cy="70" r={R} fill="none" stroke="#e5e7eb" strokeWidth="15" />
         <g transform="rotate(-90 70 70)">
           {rows.map((d, i) => {
             const len = ((d.count || 0) / total) * C
@@ -114,15 +114,15 @@ function DonutChart({ data }) {
             return seg
           })}
         </g>
-        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" fontSize="18" fontWeight="bold" fill="#f3f4f6" className="tabular-nums">{total}</text>
+        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" fontSize="18" fontWeight="bold" fill="#1f2937" className="tabular-nums">{total}</text>
       </svg>
       <div className="flex-1 w-full min-w-0 space-y-1.5">
         {rows.map((d, i) => (
           <div key={d.service_type || i} className="flex items-center gap-2 text-xs">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
-            <span className="text-gray-400 capitalize flex-1 min-w-0 truncate">{d.service_type || '—'}</span>
-            <span className="text-gray-300 font-medium tabular-nums">{d.count}</span>
-            <span className="text-gray-600 tabular-nums w-10 text-right">{Math.round(((d.count || 0) / total) * 100)}%</span>
+            <span className="text-gray-500 capitalize flex-1 min-w-0 truncate">{d.service_type || '—'}</span>
+            <span className="text-gray-700 font-medium tabular-nums">{d.count}</span>
+            <span className="text-gray-400 tabular-nums w-10 text-right">{Math.round(((d.count || 0) / total) * 100)}%</span>
           </div>
         ))}
       </div>
@@ -138,15 +138,15 @@ function ProviderBars({ data }) {
     <div className="space-y-2">
       {rows.map((d) => (
         <div key={d.provider} className="flex items-center gap-3">
-          <span className="text-xs text-gray-400 w-28 truncate">{d.provider || '—'}</span>
-          <div className="flex-1 h-4 bg-gray-800 rounded overflow-hidden">
+          <span className="text-xs text-gray-500 w-28 truncate">{d.provider || '—'}</span>
+          <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
             <div
-              className="h-full rounded bg-gradient-to-r from-brand-600/70 to-brand-500/70 transition-[width] duration-300"
+              className="h-full rounded bg-gradient-to-r from-brand-500 to-brand-400 transition-[width] duration-300"
               style={{ width: `${Math.max(2, ((d.count || 0) / max) * 100)}%` }}
             />
           </div>
-          <span className="text-xs text-gray-300 tabular-nums w-12 text-right">{d.count}</span>
-          <span className="text-xs text-gray-600 tabular-nums w-24 text-right">₦{Number(d.amount || 0).toLocaleString()}</span>
+          <span className="text-xs text-gray-700 tabular-nums w-12 text-right">{d.count}</span>
+          <span className="text-xs text-gray-400 tabular-nums w-24 text-right">₦{Number(d.amount || 0).toLocaleString()}</span>
         </div>
       ))}
     </div>
@@ -167,8 +167,6 @@ export default function Dashboard() {
   const fetchData = useCallback(async () => {
     setLoading(true)
 
-    // Each section fetched independently — one failing must never blank
-    // out the others, and every failure must be visible, never swallowed.
     const [statsRes, providersRes, txRes, chartsRes] = await Promise.allSettled([
       api.get('/api/v2/admin/stats'),
       api.get('/api/v2/admin/providers'),
@@ -237,12 +235,12 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-100">Dashboard</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-sm text-gray-500 mt-1">Platform overview and provider status</p>
         </div>
         <div className="flex items-center gap-3">
           {lastUpdated && (
-            <span className="text-xs text-gray-600">
+            <span className="text-xs text-gray-400">
               Updated {fmtLagos(lastUpdated, { date: false })}
             </span>
           )}
@@ -254,9 +252,9 @@ export default function Dashboard() {
       </div>
 
       {errorList.length > 0 && (
-        <div className="flex items-start gap-3 px-4 py-3 rounded-lg border border-red-500/30 bg-red-500/10">
-          <AlertTriangle size={18} className="text-red-400 shrink-0 mt-0.5" />
-          <div className="text-sm text-red-300 space-y-1">
+        <div className="flex items-start gap-3 px-4 py-3 rounded-lg border border-red-200 bg-red-50">
+          <AlertTriangle size={18} className="text-red-500 shrink-0 mt-0.5" />
+          <div className="text-sm text-red-600 space-y-1">
             {errorList.map((e, i) => <p key={i}>{e}</p>)}
           </div>
         </div>
@@ -267,7 +265,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {[0, 1, 2, 3].map(i => (
             <div key={i} className="card h-28 flex items-center justify-center">
-              <Loader2 size={20} className="animate-spin text-gray-600" />
+              <Loader2 size={20} className="animate-spin text-gray-400" />
             </div>
           ))}
         </div>
@@ -278,7 +276,7 @@ export default function Dashboard() {
               icon={Wallet}
               label="Bigisub Balance"
               value={fmtNgn(stats.balances?.bigisub)}
-              color="bg-brand-600/20 text-brand-300"
+              color="bg-brand-100 text-brand-600"
               sub="Bigisub vendor credit"
               highlight
             />
@@ -286,27 +284,27 @@ export default function Dashboard() {
               icon={Wallet}
               label="Alrahuz Balance"
               value={fmtNgn(stats.balances?.alrahuz)}
-              color="bg-purple-500/15 text-purple-400"
+              color="bg-purple-100 text-purple-600"
               sub="Alrahuz data vendor credit"
             />
             <StatCard
               icon={TrendingDown}
               label="Total Wallet Liability"
               value={fmtNgn(stats.total_wallet_liability)}
-              color="bg-amber-500/15 text-amber-400"
+              color="bg-amber-100 text-amber-600"
               sub="Sum of all user balances"
             />
             <StatCard
               icon={Users}
               label="Registered Users"
               value={Number(stats.total_registered_users || 0).toLocaleString()}
-              color="bg-emerald-500/15 text-emerald-400"
+              color="bg-emerald-100 text-emerald-600"
             />
             <StatCard
               icon={Banknote}
               label="Revenue Generated"
               value={fmtNgn(stats.total_revenue)}
-              color="bg-emerald-600/15 text-emerald-300"
+              color="bg-emerald-100 text-emerald-700"
               sub="Successful purchases only"
             />
           </div>
@@ -314,18 +312,18 @@ export default function Dashboard() {
           <div className="card">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold text-gray-100">Active Provider Routes</h2>
+                <h2 className="text-lg font-semibold text-gray-800">Active Provider Routes</h2>
                 <p className="text-sm text-gray-500">Which provider handles each service</p>
               </div>
-              <ArrowLeftRight size={20} className="text-gray-600" />
+              <ArrowLeftRight size={20} className="text-gray-400" />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               {Object.entries(stats.active_routes || providers || {}).map(([svc, prov]) => {
                 const Icon = serviceIcons[svc] || Zap
                 return (
-                  <div key={svc} className="flex items-center gap-3 p-3 rounded-xl bg-gray-800/40 border border-gray-800">
-                    <div className="p-2 rounded-lg bg-gray-700/50">
-                      <Icon size={16} className="text-gray-400" />
+                  <div key={svc} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-200">
+                    <div className="p-2 rounded-lg bg-white border border-gray-200">
+                      <Icon size={16} className="text-gray-500" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs text-gray-500">{serviceLabels[svc] || svc}</p>
@@ -340,7 +338,7 @@ export default function Dashboard() {
           <div className="card">
             <p className="text-sm text-gray-500">
               Total Transactions:{' '}
-              <span className="text-gray-200 font-semibold">
+              <span className="text-gray-800 font-semibold">
                 {Number(stats.total_transactions || 0).toLocaleString()}
               </span>
             </p>
@@ -350,16 +348,16 @@ export default function Dashboard() {
 
       {/* Recent transactions — independent of stats */}
       <div className="card overflow-hidden !p-0">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <div>
-            <h2 className="text-base font-semibold text-gray-100">Recent Transactions</h2>
+            <h2 className="text-base font-semibold text-gray-800">Recent Transactions</h2>
             <p className="text-xs text-gray-500 mt-0.5">Latest activity across the platform</p>
           </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase tracking-wider">
+              <tr className="border-b border-gray-200 text-left text-gray-500 text-xs uppercase tracking-wider">
                 <th className="px-4 py-2.5">Service</th>
                 <th className="px-4 py-2.5">User</th>
                 <th className="px-4 py-2.5">Phone</th>
@@ -372,7 +370,7 @@ export default function Dashboard() {
             <tbody>
               {loading && recent.length === 0 ? (
                 <tr><td colSpan={7} className="px-5 py-8 text-center">
-                  <Loader2 size={18} className="animate-spin mx-auto text-brand-400" />
+                  <Loader2 size={18} className="animate-spin mx-auto text-brand-500" />
                 </td></tr>
               ) : recent.length === 0 ? (
                 <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-500 text-sm">
@@ -383,18 +381,18 @@ export default function Dashboard() {
                   <tr key={tx.id} className="table-row">
                     <td className="px-4 py-2.5">
                       <div className="min-w-0">
-                        <p className="font-medium text-gray-200 capitalize">{tx.service_type || '—'}</p>
+                        <p className="font-medium text-gray-800 capitalize">{tx.service_type || '—'}</p>
                         <p className="text-xs text-gray-500 truncate max-w-[150px]">{tx.title}</p>
                       </div>
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="min-w-0">
-                        <p className="text-gray-300 text-xs truncate max-w-[160px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
-                        <p className="text-xs text-gray-600 truncate max-w-[220px]">{tx.profiles?.email || ''}</p>
+                        <p className="text-gray-700 text-xs truncate max-w-[160px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
+                        <p className="text-xs text-gray-400 truncate max-w-[220px]">{tx.profiles?.email || ''}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-300 whitespace-nowrap">{tx.recipient || '—'}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-gray-200 whitespace-nowrap">
+                    <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">{tx.recipient || '—'}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-gray-800 whitespace-nowrap">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5">{statusBadge(tx.status)}</td>
@@ -417,10 +415,10 @@ export default function Dashboard() {
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-semibold text-gray-100">Purchase Statistics</h2>
+              <h2 className="text-lg font-semibold text-gray-800">Purchase Statistics</h2>
               <p className="text-sm text-gray-500">Last 14 days of platform activity</p>
             </div>
-            <BarChart3 size={20} className="text-gray-600" />
+            <BarChart3 size={20} className="text-gray-400" />
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -432,23 +430,23 @@ export default function Dashboard() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-gray-300 mb-3">Purchases per Day</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">Purchases per Day</h3>
               <DailyBarChart data={charts.daily} />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-gray-300 mb-3">By Service</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">By Service</h3>
               <DonutChart data={charts.byService} />
             </div>
           </div>
 
           <div className="mt-8">
-            <h3 className="text-sm font-semibold text-gray-300 mb-3">By Provider</h3>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">By Provider</h3>
             <ProviderBars data={charts.byProvider} />
           </div>
         </div>
       ) : loading ? (
         <div className="card h-40 flex items-center justify-center">
-          <Loader2 size={20} className="animate-spin text-gray-600" />
+          <Loader2 size={20} className="animate-spin text-gray-400" />
         </div>
       ) : null}
     </div>

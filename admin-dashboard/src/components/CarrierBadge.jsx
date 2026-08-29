@@ -30,27 +30,27 @@ function sanitizeCarrier(raw) {
 
 // Brand color per carrier (chip background / text / border).
 const BRANDS = {
-  MTN:      { bg: 'bg-yellow-500/15', text: 'text-yellow-300', border: 'border-yellow-500/30', glyph: 'M' },
-  AIRTEL:   { bg: 'bg-red-500/15',    text: 'text-red-300',    border: 'border-red-500/30',    glyph: 'A' },
-  GLO:      { bg: 'bg-emerald-500/15',text: 'text-emerald-300',border: 'border-emerald-500/30',glyph: 'G' },
-  '9MOBILE':{ bg: 'bg-lime-500/15',   text: 'text-lime-300',   border: 'border-lime-500/30',   glyph: '9' },
-  GOTV:     { bg: 'bg-orange-500/15', text: 'text-orange-300', border: 'border-orange-500/30', glyph: 'G' },
-  DSTV:     { bg: 'bg-sky-500/15',    text: 'text-sky-300',    border: 'border-sky-500/30',    glyph: 'D' },
-  STARTIMES:{ bg: 'bg-violet-500/15', text: 'text-violet-300', border: 'border-violet-500/30', glyph: 'S' },
-  SHOWMAX:  { bg: 'bg-fuchsia-500/15',text: 'text-fuchsia-300',border: 'border-fuchsia-500/30',glyph: 'S' },
+  MTN:      { bg: 'bg-yellow-50',   text: 'text-yellow-700', border: 'border-yellow-200', glyph: 'M' },
+  AIRTEL:   { bg: 'bg-red-50',      text: 'text-red-700',    border: 'border-red-200',    glyph: 'A' },
+  GLO:      { bg: 'bg-emerald-50',  text: 'text-emerald-700',border: 'border-emerald-200',glyph: 'G' },
+  '9MOBILE':{ bg: 'bg-lime-50',     text: 'text-lime-700',   border: 'border-lime-200',   glyph: '9' },
+  GOTV:     { bg: 'bg-orange-50',   text: 'text-orange-700', border: 'border-orange-200', glyph: 'G' },
+  DSTV:     { bg: 'bg-sky-50',      text: 'text-sky-700',    border: 'border-sky-200',    glyph: 'D' },
+  STARTIMES:{ bg: 'bg-violet-50',   text: 'text-violet-700', border: 'border-violet-200', glyph: 'S' },
+  SHOWMAX:  { bg: 'bg-fuchsia-50',  text: 'text-fuchsia-700',border: 'border-fuchsia-200',glyph: 'S' },
 }
 
 export default function CarrierBadge({ provider }) {
   const carrier = sanitizeCarrier(provider)
   if (!carrier) {
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] uppercase tracking-wide font-medium bg-gray-800/60 text-gray-400 border border-gray-700">
+      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] uppercase tracking-wide font-medium bg-gray-100 text-gray-500 border border-gray-200">
         —
       </span>
     )
   }
   const brand = BRANDS[carrier] || {
-    bg: 'bg-gray-800/60', text: 'text-gray-300', border: 'border-gray-700', glyph: carrier.charAt(0),
+    bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-gray-200', glyph: carrier.charAt(0),
   }
   return (
     <span className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-md border ${brand.bg} ${brand.border}`}>

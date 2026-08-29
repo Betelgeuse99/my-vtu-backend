@@ -109,7 +109,7 @@ export default function Transactions() {
   if (loading && txns.length === 0) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 size={28} className="animate-spin text-brand-400" />
+        <Loader2 size={28} className="animate-spin text-brand-500" />
       </div>
     )
   }
@@ -117,13 +117,13 @@ export default function Transactions() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-100">Transactions</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
         <p className="text-sm text-gray-500 mt-1">{pagination.total} total records</p>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[220px]">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -133,7 +133,7 @@ export default function Transactions() {
           {search && (
             <button
               onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
               title="Clear search"
             >
               <X size={14} />
@@ -141,7 +141,7 @@ export default function Transactions() {
           )}
         </div>
         <div className="relative">
-          <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+          <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
@@ -172,7 +172,7 @@ export default function Transactions() {
       </div>
 
       {error && (
-        <div className="px-4 py-3 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-300">
+        <div className="px-4 py-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-600">
           {error}
         </div>
       )}
@@ -181,7 +181,7 @@ export default function Transactions() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-800 text-left text-gray-500 text-xs uppercase tracking-wider">
+              <tr className="border-b border-gray-200 text-left text-gray-500 text-xs uppercase tracking-wider">
                 <th className="px-3 py-2.5">Service</th>
                 <th className="px-3 py-2.5">User</th>
                 <th className="px-3 py-2.5">Phone</th>
@@ -195,7 +195,7 @@ export default function Transactions() {
             <tbody>
               {loading && txns.length === 0 ? (
                 <tr><td colSpan={8} className="px-3 py-12 text-center text-gray-500">
-                  <Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-400" /> Loading…
+                  <Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-500" /> Loading…
                 </td></tr>
               ) : txns.length === 0 ? (
                 <tr><td colSpan={8} className="px-3 py-12 text-center text-gray-500">No transactions found</td></tr>
@@ -204,19 +204,19 @@ export default function Transactions() {
                   <tr key={tx.id} className="table-row">
                     <td className="px-3 py-2.5">
                       <div className="min-w-0">
-                        <p className="font-medium text-gray-200 capitalize">{tx.service_type || '—'}</p>
+                        <p className="font-medium text-gray-800 capitalize">{tx.service_type || '—'}</p>
                         <p className="text-xs text-gray-500 truncate max-w-[130px]">{tx.title}</p>
                         <div className="mt-0.5"><CarrierBadge provider={tx.provider} /></div>
                       </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="min-w-0">
-                        <p className="text-gray-300 text-xs truncate max-w-[150px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
-                        <p className="text-xs text-gray-600 truncate max-w-[210px]">{tx.profiles?.email || ''}</p>
+                        <p className="text-gray-700 text-xs truncate max-w-[150px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
+                        <p className="text-xs text-gray-400 truncate max-w-[210px]">{tx.profiles?.email || ''}</p>
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-gray-300 whitespace-nowrap">{tx.recipient || '—'}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-gray-200 whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{tx.recipient || '—'}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-gray-800 whitespace-nowrap">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
                     <td className="px-3 py-2.5">{statusBadge(tx.status)}</td>
@@ -227,7 +227,7 @@ export default function Transactions() {
                         <button
                           onClick={() => handleReconcile(tx)}
                           disabled={reconciling === tx.id}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/20 transition-all"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-200 transition-all"
                           title="Verify against provider — refunds only if delivery is disproven"
                         >
                           <ShieldCheck size={12} />
@@ -236,12 +236,12 @@ export default function Transactions() {
                       ) : (tx.status === 'successful' || tx.status === 'failed') && tx.service_type !== 'funding' && tx.service_type !== 'admin_adjust' && tx.service_type !== 'refund' ? (
                         <button
                           onClick={() => { setRefundTx(tx); setRefundReason('') }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-all"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition-all"
                         >
                           <RotateCcw size={12} /> Refund
                         </button>
                       ) : tx.status === 'refunded' ? (
-                        <span className="text-xs text-gray-600">—</span>
+                        <span className="text-xs text-gray-400">—</span>
                       ) : null}
                     </td>
                   </tr>
@@ -252,7 +252,7 @@ export default function Transactions() {
         </div>
 
         {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-800">
+          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200">
             <p className="text-xs text-gray-500">
               Page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
             </p>

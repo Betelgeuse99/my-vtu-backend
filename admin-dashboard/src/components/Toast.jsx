@@ -26,15 +26,15 @@ export function ToastProvider({ children }) {
   }
 
   const icons = {
-    success: <CheckCircle size={18} className="text-emerald-400 shrink-0" />,
-    error:   <AlertTriangle size={18} className="text-red-400 shrink-0" />,
-    info:    <Info size={18} className="text-blue-400 shrink-0" />,
+    success: <CheckCircle size={18} className="text-emerald-500 shrink-0" />,
+    error:   <AlertTriangle size={18} className="text-red-500 shrink-0" />,
+    info:    <Info size={18} className="text-blue-500 shrink-0" />,
   }
 
   const bgColors = {
-    success: 'border-emerald-500/30 bg-emerald-500/10',
-    error:   'border-red-500/30 bg-red-500/10',
-    info:    'border-blue-500/30 bg-blue-500/10',
+    success: 'border-emerald-200 bg-emerald-50',
+    error:   'border-red-200 bg-red-50',
+    info:    'border-blue-200 bg-blue-50',
   }
 
   return (
@@ -45,11 +45,11 @@ export function ToastProvider({ children }) {
         {toasts.map(t => (
           <div
             key={t.id}
-            className={`toast-enter flex items-start gap-3 px-4 py-3 rounded-lg border backdrop-blur-md shadow-xl ${bgColors[t.type] || bgColors.info}`}
+            className={`toast-enter flex items-start gap-3 px-4 py-3 rounded-lg border shadow-xl ${bgColors[t.type] || bgColors.info}`}
           >
             {icons[t.type] || icons.info}
-            <span className="text-sm text-gray-200 flex-1">{t.message}</span>
-            <button onClick={() => remove(t.id)} className="text-gray-500 hover:text-gray-300 shrink-0 mt-0.5">
+            <span className="text-sm text-gray-700 flex-1">{t.message}</span>
+            <button onClick={() => remove(t.id)} className="text-gray-400 hover:text-gray-600 shrink-0 mt-0.5">
               <X size={14} />
             </button>
           </div>

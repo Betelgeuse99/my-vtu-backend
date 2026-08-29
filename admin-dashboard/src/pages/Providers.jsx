@@ -20,13 +20,13 @@ function ServiceCard({ service, current, onChange, loading }) {
   const isBigi = current === 'bigisub'
 
   return (
-    <div className="card hover:border-gray-700 transition-all">
+    <div className="card hover:border-brand-300 transition-all">
       <div className="flex items-start gap-3 mb-4">
-        <div className="p-2.5 rounded-xl bg-gray-800">
-          <Icon size={20} className="text-gray-400" />
+        <div className="p-2.5 rounded-xl bg-gray-100 border border-gray-200">
+          <Icon size={20} className="text-gray-500" />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-gray-200">{label}</h3>
+          <h3 className="text-sm font-semibold text-gray-800">{label}</h3>
           <p className="text-xs text-gray-500">{desc}</p>
         </div>
       </div>
@@ -40,9 +40,9 @@ function ServiceCard({ service, current, onChange, loading }) {
             className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all border ${
               current === p
                 ? p === 'bigisub'
-                  ? 'bg-brand-600/20 text-brand-400 border-brand-500/30 shadow-sm shadow-brand-500/10'
-                  : 'bg-purple-600/20 text-purple-400 border-purple-500/30 shadow-sm shadow-purple-500/10'
-                : 'bg-gray-800/50 text-gray-500 border-gray-700 hover:text-gray-300 hover:border-gray-600'
+                  ? 'bg-brand-50 text-brand-700 border-brand-200 shadow-sm'
+                  : 'bg-purple-50 text-purple-700 border-purple-200 shadow-sm'
+                : 'bg-white text-gray-400 border-gray-200 hover:text-gray-600 hover:border-gray-300'
             }`}
           >
             {p === 'bigisub' ? 'Bigisub' : 'Alrahuz'}
@@ -51,8 +51,8 @@ function ServiceCard({ service, current, onChange, loading }) {
       </div>
 
       <div className="mt-3 flex items-center gap-2">
-        <span className="text-xs text-gray-600">Active:</span>
-        <span className={`text-xs font-medium ${isBigi ? 'text-brand-400' : 'text-purple-400'}`}>
+        <span className="text-xs text-gray-400">Active:</span>
+        <span className={`text-xs font-medium ${isBigi ? 'text-brand-600' : 'text-purple-600'}`}>
           {isBigi ? 'Bigisub' : 'Alrahuzdata'}
         </span>
       </div>
@@ -64,7 +64,7 @@ export default function Providers() {
   const [routes, setRoutes] = useState({})
   const [loading, setLoading] = useState(true)
   const [switching, setSwitching] = useState(false)
-  const [confirmGlobal, setConfirmGlobal] = useState(null) // { provider: 'bigisub' | 'alrahuz' }
+  const [confirmGlobal, setConfirmGlobal] = useState(null)
   const toast = useToast()
 
   const fetchRoutes = async () => {
@@ -81,7 +81,6 @@ export default function Providers() {
 
   useEffect(() => { fetchRoutes() }, [])
 
-  // Determine if all services use the same provider
   const uniqueProviders = [...new Set(Object.values(routes))]
   const isGlobalMode = uniqueProviders.length === 1
   const globalProvider = isGlobalMode ? uniqueProviders[0] : null
@@ -117,7 +116,7 @@ export default function Providers() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-100">Provider Routing</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Provider Routing</h1>
           <p className="text-sm text-gray-500 mt-1">Control which VTU provider handles each service</p>
         </div>
         <button onClick={fetchRoutes} className="btn-secondary" disabled={loading}>
@@ -128,7 +127,7 @@ export default function Providers() {
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 size={28} className="animate-spin text-brand-400" />
+          <Loader2 size={28} className="animate-spin text-brand-500" />
         </div>
       ) : (
         <>
@@ -138,7 +137,7 @@ export default function Providers() {
               <div className="flex items-center gap-3 flex-1">
                 <ArrowRightLeft size={20} className="text-gray-400" />
                 <div>
-                  <h2 className="text-base font-semibold text-gray-100">Master Global Switch</h2>
+                  <h2 className="text-base font-semibold text-gray-800">Master Global Switch</h2>
                   <p className="text-xs text-gray-500">
                     {isGlobalMode
                       ? `All services currently routed through ${globalProvider === 'bigisub' ? 'Bigisub' : 'Alrahuzdata'}`
@@ -147,14 +146,14 @@ export default function Providers() {
                 </div>
               </div>
 
-              <div className="flex gap-2 bg-gray-800/50 p-1 rounded-xl border border-gray-700">
+              <div className="flex gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
                 <button
                   disabled={switching}
                   onClick={() => setConfirmGlobal({ provider: 'alrahuz' })}
                   className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
                     isGlobalMode && globalProvider === 'alrahuz'
                       ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-gray-400 hover:text-gray-200'
+                      : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
                   {switching && confirmGlobal?.provider === 'alrahuz'
@@ -167,7 +166,7 @@ export default function Providers() {
                   className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
                     isGlobalMode && globalProvider === 'bigisub'
                       ? 'bg-brand-600 text-white shadow-sm'
-                      : 'text-gray-400 hover:text-gray-200'
+                      : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
                   {switching && confirmGlobal?.provider === 'bigisub'
@@ -180,7 +179,7 @@ export default function Providers() {
 
           {/* Per-Service Overrides */}
           <div>
-            <h2 className="text-base font-semibold text-gray-100 mb-3">Per-Service Overrides</h2>
+            <h2 className="text-base font-semibold text-gray-800 mb-3">Per-Service Overrides</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               {VALID_SERVICES.map(svc => (
                 <ServiceCard

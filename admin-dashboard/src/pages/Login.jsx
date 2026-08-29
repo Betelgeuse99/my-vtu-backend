@@ -32,21 +32,21 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-600/20 border border-brand-500/20 mb-4">
-            <Shield size={32} className="text-brand-400" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-500 mb-4">
+            <Shield size={32} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-100">Dreamhatcher Admin</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Dreamhatcher Admin</h1>
           <p className="text-sm text-gray-500 mt-1">Sign in to manage your VTU platform</p>
         </div>
 
         <form onSubmit={handleLogin} className="card space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1.5">Email</label>
+            <label className="block text-sm font-medium text-gray-600 mb-1.5">Email</label>
             <div className="relative">
-              <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+              <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="email"
                 value={email}
@@ -58,9 +58,9 @@ export default function Login() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1.5">Password</label>
+            <label className="block text-sm font-medium text-gray-600 mb-1.5">Password</label>
             <div className="relative">
-              <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+              <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="password"
                 value={password}

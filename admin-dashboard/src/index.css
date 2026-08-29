@@ -3,43 +3,43 @@
 @tailwind utilities;
 
 @layer base {
-  * { @apply border-gray-800; }
-  body { @apply bg-gray-950 text-gray-100; }
+  * { @apply border-gray-200; }
+  body { @apply bg-slate-50 text-gray-800; }
 }
 
 @layer components {
   .card {
-    @apply bg-gray-900/60 backdrop-blur-sm border border-gray-800 rounded-xl p-5;
+    @apply bg-white border border-gray-200 rounded-xl p-5 shadow-sm;
   }
   .btn-primary {
-    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-medium text-sm transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-secondary {
-    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium text-sm transition-all duration-150 border border-gray-700;
+    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white hover:bg-gray-50 text-gray-700 font-medium text-sm transition-all duration-150 border border-gray-300;
   }
   .btn-danger {
-    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-400 font-medium text-sm transition-all duration-150 border border-red-600/30;
+    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-medium text-sm transition-all duration-150 border border-red-200;
   }
   .btn-success {
-    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 font-medium text-sm transition-all duration-150 border border-emerald-600/30;
+    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 font-medium text-sm transition-all duration-150 border border-emerald-200;
   }
   .input {
-    @apply w-full px-3.5 py-2.5 rounded-lg bg-gray-800/80 border border-gray-700 text-gray-100 text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all;
+    @apply w-full px-3.5 py-2.5 rounded-lg bg-white border border-gray-300 text-gray-800 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all;
   }
   .badge-success {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20;
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200;
   }
   .badge-failed {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-500/15 text-red-400 border border-red-500/20;
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200;
   }
   .badge-refunded {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/15 text-amber-400 border border-amber-500/20;
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200;
   }
   .badge-pending {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/15 text-blue-400 border border-blue-500/20;
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-600 border border-blue-200;
   }
   .table-row {
-    @apply border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors;
+    @apply border-b border-gray-100 hover:bg-gray-50/50 transition-colors;
   }
 }
 
@@ -53,5 +53,5 @@
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
