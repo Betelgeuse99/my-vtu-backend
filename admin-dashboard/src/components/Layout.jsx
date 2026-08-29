@@ -42,7 +42,7 @@ export default function Layout() {
       {/* Brand */}
       <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} gap-2 px-3 py-4 mb-2`}>
         <div className="flex items-center gap-3 min-w-0">
-          <img src="/dhtlogo.png" alt="Dreamhatcher Logo" className="w-9 h-9 object-contain shrink-0" />
+          <img src={`${import.meta.env.BASE_URL}dhtlogo.png`} alt="Dreamhatcher Logo" className="w-9 h-9 object-contain shrink-0" />
           {!collapsed && (
             <div className="min-w-0">
               <h1 className="text-base font-bold text-gray-900 leading-tight truncate">Dreamhatcher</h1>
