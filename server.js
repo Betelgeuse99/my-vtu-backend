@@ -2552,6 +2552,69 @@ app.post("/api/v2/admin/plans/update-price", requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/v2/admin/plans/bigisub — all plans with Bigisub IDs for admin view
+app.get("/api/v2/admin/plans/bigisub", requireAdmin, async (req, res) => {
+  try {
+    const appNetId = Number(req.query.network) || null;
+    let query = supabase
+      .from("data_plans")
+      .select("*")
+      .not("bigi_plan_id", "is", null)
+      .eq("is_active", true)
+      .order("retail_price", { ascending: true });
+    if (appNetId) query = query.eq("network_id", appNetId);
+    const { data: plans, error } = await query;
+    if (error) throw error;
+    const formatted = (plans || []).map(p => ({
+      row_id: p.id,
+      volume: p.volume,
+      validity: p.validity,
+      network_id: p.network_id,
+      plan_type: p.plan_type,
+      bigi_plan_id: p.bigi_plan_id,
+      buy_price: p.buy_price,
+      retail_price: p.retail_price,
+      is_active: p.is_active,
+    }));
+    res.json({ success: true, provider: "bigisub", data: formatted });
+  } catch (err) {
+    console.error("❌ Bigisub plans fetch error:", err.message);
+    res.status(500).json({ success: false, message: err.message, data: [] });
+  }
+});
+
+// GET /api/v2/admin/plans/alrahuz — all plans with Alrahuz IDs for admin view
+app.get("/api/v2/admin/plans/alrahuz", requireAdmin, async (req, res) => {
+  try {
+    const appNetId = Number(req.query.network) || null;
+    let query = supabase
+      .from("data_plans")
+      .select("*")
+      .not("alrahuz_plan_id", "is", null)
+      .eq("is_active", true)
+      .order("retail_price", { ascending: true });
+    if (appNetId) query = query.eq("network_id", appNetId);
+    const { data: plans, error } = await query;
+    if (error) throw error;
+    const formatted = (plans || []).map(p => ({
+      row_id: p.id,
+      volume: p.volume,
+      validity: p.validity,
+      network_id: p.network_id,
+      plan_type: p.plan_type,
+      alrahuz_plan_id: p.alrahuz_plan_id,
+      alrahuz_buy_price: p.alrahuz_buy_price,
+      retail_price: p.retail_price,
+      alrahuz_retail_price: p.alrahuz_retail_price,
+      is_active: p.is_active,
+    }));
+    res.json({ success: true, provider: "alrahuz", data: formatted });
+  } catch (err) {
+    console.error("❌ Alrahuz plans fetch error:", err.message);
+    res.status(500).json({ success: false, message: err.message, data: [] });
+  }
+});
+
 // -------------------------------------------------------------
 // 6. ADMIN DASHBOARD STATIC HOSTING (/admin)
 // Serves the built Vite app (admin-dashboard/dist) from this same

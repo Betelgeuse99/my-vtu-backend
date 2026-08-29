@@ -41,68 +41,72 @@ function EditRow({ plan, onSave, onCancel, provider }) {
     }
   }
 
+  if (provider === 'bigisub') {
+    return (
+      <tr className="table-row bg-brand-50/50">
+        <td className="px-5 py-3">
+          <p className="font-medium text-gray-800">{plan.volume}</p>
+          <p className="text-xs text-gray-500">{plan.validity}</p>
+        </td>
+        <td className="px-5 py-3 text-xs text-gray-500 font-mono">{plan.bigi_plan_id ? `#${plan.bigi_plan_id}` : '—'}</td>
+        <td className="px-5 py-3 font-mono text-xs text-gray-500">₦{Number(plan.buy_price || 0).toLocaleString()}</td>
+        <td className="px-5 py-3">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400 text-sm">₦</span>
+            <input type="number" value={price} onChange={e => setPrice(e.target.value)} className="input !w-28 !py-1.5" autoFocus />
+          </div>
+        </td>
+        <td className="px-5 py-3">
+          <button onClick={() => setActive(!active)} className="transition-colors">
+            {active ? <ToggleRight size={24} className="text-emerald-500" /> : <ToggleLeft size={24} className="text-gray-300" />}
+          </button>
+        </td>
+        <td className="px-5 py-3 text-right">
+          <div className="flex gap-2 justify-end">
+            <button onClick={onCancel} className="btn-secondary !px-3 !py-1.5 !text-xs">Cancel</button>
+            <button onClick={handleSave} disabled={saving} className="btn-primary !px-3 !py-1.5 !text-xs">
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
+            </button>
+          </div>
+        </td>
+      </tr>
+    )
+  }
+
   return (
-    <tr className="table-row bg-brand-50/50">
+    <tr className="table-row bg-purple-50/50">
       <td className="px-5 py-3">
         <p className="font-medium text-gray-800">{plan.volume}</p>
         <p className="text-xs text-gray-500">{plan.validity}</p>
       </td>
-      {provider === 'bigisub' ? (
-        <>
-          <td className="px-5 py-3 text-xs text-gray-500 font-mono">{plan.bigi_plan_id ? `#${plan.bigi_plan_id}` : '—'}</td>
-          <td className="px-5 py-3 font-mono text-xs text-gray-500">₦{Number(plan.buy_price || 0).toLocaleString()}</td>
-        </>
-      ) : (
-        <>
-          <td className="px-5 py-3 text-xs text-gray-500 font-mono">{plan.alrahuz_plan_id ? `#${plan.alrahuz_plan_id}` : '—'}</td>
-          <td className="px-5 py-3 font-mono text-xs text-gray-500">
-            {plan.alrahuz_buy_price != null ? `₦${Number(plan.alrahuz_buy_price).toLocaleString()}` : '—'}
-          </td>
-        </>
-      )}
+      <td className="px-5 py-3 text-xs text-gray-500 font-mono">{plan.alrahuz_plan_id ? `#${plan.alrahuz_plan_id}` : '—'}</td>
+      <td className="px-5 py-3 font-mono text-xs text-gray-500">
+        {plan.alrahuz_buy_price != null ? `₦${Number(plan.alrahuz_buy_price).toLocaleString()}` : '—'}
+      </td>
       <td className="px-5 py-3">
         <div className="flex items-center gap-2">
           <span className="text-gray-400 text-sm">₦</span>
-          <input
-            type="number"
-            value={price}
-            onChange={e => setPrice(e.target.value)}
-            className="input !w-28 !py-1.5"
-            autoFocus
-          />
+          <input type="number" value={price} onChange={e => setPrice(e.target.value)} className="input !w-28 !py-1.5" autoFocus />
         </div>
       </td>
-      {provider === 'alrahuz' && (
-        <td className="px-5 py-3">
-          {plan.alrahuz_plan_id ? (
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-sm">₦</span>
-              <input
-                type="number"
-                value={alrPrice}
-                onChange={e => setAlrPrice(e.target.value)}
-                placeholder="same"
-                className="input !w-24 !py-1.5"
-              />
-            </div>
-          ) : <span className="text-xs text-gray-400">—</span>}
-        </td>
-      )}
+      <td className="px-5 py-3">
+        {plan.alrahuz_plan_id ? (
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400 text-sm">₦</span>
+            <input type="number" value={alrPrice} onChange={e => setAlrPrice(e.target.value)} placeholder="same" className="input !w-24 !py-1.5" />
+          </div>
+        ) : <span className="text-xs text-gray-400">—</span>}
+      </td>
       <td className="px-5 py-3">
         <button onClick={() => setActive(!active)} className="transition-colors">
-          {active ? (
-            <ToggleRight size={24} className="text-emerald-500" />
-          ) : (
-            <ToggleLeft size={24} className="text-gray-300" />
-          )}
+          {active ? <ToggleRight size={24} className="text-emerald-500" /> : <ToggleLeft size={24} className="text-gray-300" />}
         </button>
       </td>
       <td className="px-5 py-3 text-right">
         <div className="flex gap-2 justify-end">
           <button onClick={onCancel} className="btn-secondary !px-3 !py-1.5 !text-xs">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="btn-primary !px-3 !py-1.5 !text-xs">
-            {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-            Save
+            {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
           </button>
         </div>
       </td>
@@ -114,15 +118,15 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
   const isBigi = provider === 'bigisub'
   const providerLabel = isBigi ? 'Bigisub' : 'Alrahuz'
   const headerColor = isBigi ? 'text-brand-600' : 'text-purple-600'
-  const bgColor = isBigi ? 'bg-brand-50' : 'bg-purple-50'
-  const borderColor = isBigi ? 'border-brand-200' : 'border-purple-200'
+
+  const colCount = isBigi ? 6 : 7
 
   return (
     <div className="space-y-3">
-      <div className={`flex items-center gap-2 px-1`}>
+      <div className="flex items-center gap-2 px-1">
         <div className={`w-1.5 h-5 rounded-full ${isBigi ? 'bg-brand-500' : 'bg-purple-500'}`} />
         <h3 className={`text-sm font-bold ${headerColor}`}>{providerLabel} Plans</h3>
-        <span className="text-xs text-gray-400">— fetched from {providerLabel} API</span>
+        <span className="text-xs text-gray-400">— {plans.length} plans from {providerLabel} API</span>
       </div>
 
       <div className="card overflow-hidden !p-0">
@@ -131,7 +135,7 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
             <thead>
               <tr className="border-b border-gray-200 text-left text-gray-500 text-xs uppercase tracking-wider">
                 <th className="px-5 py-3">Plan</th>
-                <th className="px-5 py-3">{providerLabel} ID</th>
+                <th className="px-5 py-3">{providerLabel} Plan ID</th>
                 <th className="px-5 py-3">{providerLabel} Buy Price</th>
                 <th className="px-5 py-3">Retail Price</th>
                 {provider === 'alrahuz' && (
@@ -143,19 +147,20 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={provider === 'alrahuz' ? 7 : 6} className="px-5 py-12 text-center text-gray-500">
+                <tr><td colSpan={colCount} className="px-5 py-12 text-center text-gray-500">
                   <Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-500" /> Loading {providerLabel} plans…
                 </td></tr>
               ) : plans.length === 0 ? (
-                <tr><td colSpan={provider === 'alrahuz' ? 7 : 6} className="px-5 py-12 text-center text-gray-500">
-                  <Wifi size={24} className="mx-auto mb-2 text-gray-300" /> No {providerLabel} plans available
+                <tr><td colSpan={colCount} className="px-5 py-12 text-center text-gray-500">
+                  <Wifi size={24} className="mx-auto mb-2 text-gray-300" /> No {providerLabel} plans available for this network
                 </td></tr>
               ) : (
                 plans.map(plan => {
-                  if (editingId === plan.id) {
+                  const key = plan.row_id || plan.bigi_plan_id || plan.alrahuz_plan_id
+                  if (editingId === key) {
                     return (
                       <EditRow
-                        key={plan.id}
+                        key={key}
                         plan={plan}
                         provider={provider}
                         onSave={() => { setEditingId(null); onSave() }}
@@ -164,7 +169,7 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
                     )
                   }
                   return (
-                    <tr key={plan.row_id || plan.id} className="table-row">
+                    <tr key={key} className="table-row">
                       <td className="px-5 py-3">
                         <p className="font-medium text-gray-800">{plan.volume}</p>
                         <p className="text-xs text-gray-500">{plan.validity}</p>
@@ -205,7 +210,7 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
                       </td>
                       <td className="px-5 py-3 text-right">
                         <button
-                          onClick={() => setEditingId(plan.id)}
+                          onClick={() => setEditingId(key)}
                           className="btn-secondary !px-3 !py-1.5 !text-xs"
                         >
                           Edit
@@ -224,31 +229,54 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
 }
 
 export default function Plans() {
-  const [plans, setPlans] = useState([])
+  const [bigiPlans, setBigiPlans] = useState([])
+  const [alrPlans, setAlrPlans] = useState([])
   const [network, setNetwork] = useState(1)
-  const [loading, setLoading] = useState(true)
+  const [bigiLoading, setBigiLoading] = useState(true)
+  const [alrLoading, setAlrLoading] = useState(true)
   const [editingId, setEditingId] = useState(null)
   const [provider, setProvider] = useState('bigisub')
   const toast = useToast()
 
-  const fetchPlans = useCallback(async () => {
-    setLoading(true)
+  const fetchBigiPlans = useCallback(async () => {
+    setBigiLoading(true)
     setEditingId(null)
     try {
-      const res = await api.get(`/api/v2/vtu/data/plans?network=${network}`)
-      setPlans(res.data.data || [])
-      if (res.data.provider) setProvider(res.data.provider)
+      const res = await api.get(`/api/v2/admin/plans/bigisub?network=${network}`)
+      setBigiPlans(res.data.data || [])
     } catch (err) {
       toast.error(err.message)
     } finally {
-      setLoading(false)
+      setBigiLoading(false)
     }
   }, [network])
 
-  useEffect(() => { fetchPlans() }, [network])
+  const fetchAlrPlans = useCallback(async () => {
+    setAlrLoading(true)
+    setEditingId(null)
+    try {
+      const res = await api.get(`/api/v2/admin/plans/alrahuz?network=${network}`)
+      setAlrPlans(res.data.data || [])
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setAlrLoading(false)
+    }
+  }, [network])
 
-  const bigisubPlans = plans.filter(p => p.bigi_plan_id)
-  const alrahuzPlans = plans.filter(p => p.alrahuz_plan_id)
+  const fetchActiveProvider = useCallback(async () => {
+    try {
+      const res = await api.get('/api/v2/admin/providers')
+      const routes = res.data.data || {}
+      setProvider(routes.data || 'bigisub')
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    fetchBigiPlans()
+    fetchAlrPlans()
+    fetchActiveProvider()
+  }, [network])
 
   return (
     <div className="space-y-6">
@@ -256,7 +284,7 @@ export default function Plans() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Data Plans</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Manage retail pricing and availability
+            Manage retail pricing and availability — each provider's plans shown separately
           </p>
         </div>
 
@@ -287,24 +315,24 @@ export default function Plans() {
         <span className="text-gray-400">(change in Provider Routing)</span>
       </div>
 
-      {/* Bigisub Plans Table */}
+      {/* Bigisub Plans — only plans with a Bigisub ID */}
       <ProviderTable
-        plans={bigisubPlans}
+        plans={bigiPlans}
         provider="bigisub"
         editingId={editingId}
         setEditingId={setEditingId}
-        onSave={fetchPlans}
-        loading={loading}
+        onSave={fetchBigiPlans}
+        loading={bigiLoading}
       />
 
-      {/* Alrahuz Plans Table */}
+      {/* Alrahuz Plans — only plans with an Alrahuz ID */}
       <ProviderTable
-        plans={alrahuzPlans}
+        plans={alrPlans}
         provider="alrahuz"
         editingId={editingId}
         setEditingId={setEditingId}
-        onSave={fetchPlans}
-        loading={loading}
+        onSave={fetchAlrPlans}
+        loading={alrLoading}
       />
     </div>
   )
