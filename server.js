@@ -975,6 +975,7 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
       });
       return res.json({
         success: true,
+        status: "pending",
         message: "Your airtime request is being processed. It will deliver shortly.",
         data: response,
         balance: newBalance,
@@ -1212,6 +1213,7 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
       });
       return res.json({
         success: true,
+        status: "pending",
         message: "Your data request is being processed. It will deliver shortly.",
         provider: fulfillProvider,
         reference: txRef,
@@ -1457,6 +1459,7 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
       });
       return res.json({
         success: true,
+        status: "pending",
         message: "Your cable subscription is being processed. It will deliver shortly.",
         data: response,
         balance: newBalance,
@@ -1685,6 +1688,7 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
       });
       return res.json({
         success: true,
+        status: "pending",
         message: "Your electricity payment is being processed. It will deliver shortly.",
         data: response,
         balance: newBalance,
@@ -1839,6 +1843,7 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
       });
       return res.json({
         success: true,
+        status: "pending",
         message: "Your recharge PINs are being processed. They will deliver shortly.",
         data: response,
         balance: newBalance,
@@ -1977,6 +1982,7 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
       });
       return res.json({
         success: true,
+        status: "pending",
         message: "Your exam PINs are being processed. They will deliver shortly.",
         data: response,
         balance: newBalance,
