@@ -418,6 +418,7 @@ async function creditWallet(userId, amount) {
 // failure, the order is treated as placed.
 const FAILURE_KEY_HINTS = ["success", "status", "error", "code", "status_code", "statuscode", "api_response", "detail", "message"];
 const FAILURE_VALUE_HINTS = ["false", "0", "no", "failed", "error", "failure", "fail", "declined", "cancelled", "invalid"];
+const PENDING_VALUE_HINTS = ["pending", "processing", "queued", "waiting", "in_progress", "in progress", "submitted", "running"];
 
 function bigiFailed(node, depth = 0) {
   if (!node || depth > 3) return false;
@@ -448,6 +449,38 @@ function bigiFailed(node, depth = 0) {
       return nested.some((item) => bigiFailed(item, depth + 1));
     }
     return bigiFailed(nested, depth + 1);
+  }
+  return false;
+}
+
+// Detect if a Bigisub response indicates the order is still processing / pending.
+// Returns true when the response is neither clearly successful nor clearly failed.
+function bigiPending(node, depth = 0) {
+  if (!node || depth > 3) return false;
+
+  if (typeof node === "string") {
+    return PENDING_VALUE_HINTS.includes(node.toLowerCase());
+  }
+  if (typeof node !== "object" || Array.isArray(node)) return false;
+
+  const isPendingValue = (v) => {
+    if (typeof v === "string") return PENDING_VALUE_HINTS.includes(v.toLowerCase());
+    return false;
+  };
+
+  for (const key of Object.keys(node)) {
+    const lk = key.toLowerCase();
+    if (!FAILURE_KEY_HINTS.includes(lk)) continue;
+    const v = node[key];
+    if (isPendingValue(v)) return true;
+  }
+
+  const nested = node.data;
+  if (nested && typeof nested === "object") {
+    if (Array.isArray(nested)) {
+      return nested.some((item) => bigiPending(item, depth + 1));
+    }
+    return bigiPending(nested, depth + 1);
   }
   return false;
 }
@@ -925,6 +958,30 @@ app.post("/api/v2/vtu/airtime/purchase", async (req, res) => {
       });
     }
 
+    // Provider returned a non-failure response but it signals "pending" / "processing"
+    // — the order was accepted but NOT yet delivered. Keep the debit and log as pending
+    // so the admin can reconcile later. Do NOT mark as successful yet.
+    if (bigiPending(response)) {
+      console.log("⏳ Airtime (" + provider + ") marked PENDING for user " + userId + " —₦" + price);
+      await logTx({
+        user_id: userId,
+        title: "Airtime ₦" + price + " — Pending",
+        service_type: "airtime",
+        amount: price,
+        recipient: String(phone_number).trim(),
+        status: "pending",
+        reference: txRef,
+        provider: canonicalNetworkName(network)
+      });
+      return res.json({
+        success: true,
+        message: "Your airtime request is being processed. It will deliver shortly.",
+        data: response,
+        balance: newBalance,
+        reference: txRef
+      });
+    }
+
     await logTx({
       user_id: userId,
       title: "Airtime ₦" + price,
@@ -1138,6 +1195,28 @@ app.post("/api/v2/vtu/data/purchase", async (req, res) => {
         message: bigiErrorMessage(response, fulfillProvider === "alrahuz"
           ? "Alrahuzdata rejected this purchase"
           : "Bigisub rejected this purchase")
+      });
+    }
+
+    if (bigiPending(response)) {
+      console.log("⏳ Data (" + fulfillProvider + ") marked PENDING for user " + userId + " —₦" + price);
+      await logTx({
+        user_id: userId,
+        title: (planRow?.volume ? planRow.volume + " Data" : "Data Purchase") + " — Pending",
+        service_type: "data",
+        amount: price,
+        recipient: String(phone_number).trim(),
+        status: "pending",
+        reference: txRef,
+        provider: canonicalNetworkName(network)
+      });
+      return res.json({
+        success: true,
+        message: "Your data request is being processed. It will deliver shortly.",
+        provider: fulfillProvider,
+        reference: txRef,
+        data: response,
+        balance: newBalance
       });
     }
 
@@ -1364,6 +1443,27 @@ app.post("/api/v2/vtu/cable/purchase", async (req, res) => {
       });
     }
 
+    if (bigiPending(response)) {
+      console.log("⏳ Cable (" + activeProvider + ") marked PENDING for user " + userId + " —₦" + price);
+      await logTx({
+        user_id: userId,
+        title: "Cable TV — Pending",
+        service_type: "cable",
+        amount: price,
+        recipient: String(card_no).trim(),
+        status: "pending",
+        reference: txRef,
+        provider: cableDisplayName(cable_type || provider)
+      });
+      return res.json({
+        success: true,
+        message: "Your cable subscription is being processed. It will deliver shortly.",
+        data: response,
+        balance: newBalance,
+        reference: txRef
+      });
+    }
+
     await logTx({
       user_id: userId,
       title: "Cable TV — " + getCableCode(cable_type || provider),
@@ -1571,6 +1671,27 @@ app.post("/api/v2/bills/electricity/pay", async (req, res) => {
       });
     }
 
+    if (bigiPending(response)) {
+      console.log("⏳ Electricity (" + activeProvider + ") marked PENDING for user " + userId + " —₦" + price);
+      await logTx({
+        user_id: userId,
+        title: "Electricity — Pending",
+        service_type: "electricity",
+        amount: price,
+        recipient: String(meter_no).trim(),
+        status: "pending",
+        reference: txRef,
+        provider: String(company).trim().toUpperCase()
+      });
+      return res.json({
+        success: true,
+        message: "Your electricity payment is being processed. It will deliver shortly.",
+        data: response,
+        balance: newBalance,
+        reference: txRef
+      });
+    }
+
     await logTx({
       user_id: userId,
       title: "Electricity — " + String(company).trim(),
@@ -1704,6 +1825,27 @@ app.post("/api/v2/vtu/recharge-pin/purchase", async (req, res) => {
       });
     }
 
+    if (bigiPending(response)) {
+      console.log("⏳ Recharge PIN (" + activeProvider + ") marked PENDING for user " + userId + " —₦" + price);
+      await logTx({
+        user_id: userId,
+        title: "Recharge PINs — Pending",
+        service_type: "recharge_pin",
+        amount: price,
+        recipient: String(network || "").trim(),
+        status: "pending",
+        reference: txRef,
+        provider: canonicalNetworkName(network)
+      });
+      return res.json({
+        success: true,
+        message: "Your recharge PINs are being processed. They will deliver shortly.",
+        data: response,
+        balance: newBalance,
+        reference: txRef
+      });
+    }
+
     await logTx({
       user_id: userId,
       title: "Recharge PINs x" + qty,
@@ -1818,6 +1960,27 @@ app.post("/api/v2/bills/result-checker/purchase", async (req, res) => {
         message: bigiErrorMessage(response, activeProvider === "alrahuz"
           ? "Alrahuzdata rejected this purchase"
           : "Bigisub rejected this purchase")
+      });
+    }
+
+    if (bigiPending(response)) {
+      console.log("⏳ Exam PIN (" + activeProvider + ") marked PENDING for user " + userId + " —₦" + price);
+      await logTx({
+        user_id: userId,
+        title: "Exam PIN — Pending",
+        service_type: "exam_pin",
+        amount: price,
+        recipient: String(exam).trim(),
+        status: "pending",
+        reference: txRef,
+        provider: null
+      });
+      return res.json({
+        success: true,
+        message: "Your exam PINs are being processed. They will deliver shortly.",
+        data: response,
+        balance: newBalance,
+        reference: txRef
       });
     }
 
