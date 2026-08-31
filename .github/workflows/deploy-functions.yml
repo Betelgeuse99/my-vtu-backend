@@ -40,9 +40,16 @@ jobs:
           RECONCILE_KEY=${{ secrets.RECONCILE_KEY }}
           EOF
 
+      - name: Set secrets on Supabase
+        # CLI 2.x: project-level secrets, applied to all functions immediately.
+        # SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are auto-injected by the
+        # platform, so the CLI skips them here.
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase secrets set --env-file /tmp/functions.env --project-ref lraryzkamshicildghdv
+
       - name: Deploy functions to Supabase
-        # --with-secrets pushes the env file into each function's secret store.
         # verify_jwt flags come from supabase/config.toml (auth/vtu/wallet/reconcile = false).
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy auth vtu wallet admin reconcile --project-ref lraryzkamshicildghdv --with-secrets --env-file /tmp/functions.env
+        run: supabase functions deploy auth vtu wallet admin reconcile --project-ref lraryzkamshicildghdv --use-api
