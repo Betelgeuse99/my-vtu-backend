@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   // Relative asset base so the same build works on GitHub Pages
   // (https://<user>.github.io/<repo>/) or any subpath — no /admin prefix.
+  // Live at https://portal.dreamhatcher.ink via GitHub Pages (HashRouter).
   base: './',
   server: {
     proxy: {
