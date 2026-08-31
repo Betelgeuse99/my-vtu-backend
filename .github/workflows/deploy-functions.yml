@@ -52,4 +52,4 @@ jobs:
         # verify_jwt flags come from supabase/config.toml (auth/vtu/wallet/reconcile = false).
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase functions deploy auth vtu wallet admin reconcile --project-ref lraryzkamshicildghdv --use-api
+        run: supabase functions deploy auth vtu wallet admin reconcile squad-verify --project-ref lraryzkamshicildghdv --use-api
