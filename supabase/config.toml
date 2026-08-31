@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.admin]
 verify_jwt = true
+
+[functions.squad-verify]
+verify_jwt = true
