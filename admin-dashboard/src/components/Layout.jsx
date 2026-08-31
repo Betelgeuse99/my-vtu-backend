@@ -33,8 +33,8 @@ export default function Layout() {
   const navLinkClass = ({ isActive }) =>
     `flex items-center ${collapsed ? 'justify-center px-0 mx-2' : 'gap-3 px-4 mx-2'} py-2.5 rounded-lg text-sm font-medium transition-all ${
       isActive
-        ? 'bg-brand-50 text-brand-700 border border-brand-200'
-        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+        ? 'bg-brand-900/50 text-brand-300 border border-brand-700'
+        : 'text-gray-400 hover:text-gray-100 hover:bg-slate-700/50'
     }`
 
   const Sidebar = () => (
@@ -45,7 +45,7 @@ export default function Layout() {
           <img src={`${import.meta.env.BASE_URL}dhtlogo.png`} alt="Dreamhatcher Logo" className="w-9 h-9 object-contain shrink-0" />
           {!collapsed && (
             <div className="min-w-0">
-              <h1 className="text-base font-bold text-gray-900 leading-tight truncate">Dreamhatcher</h1>
+              <h1 className="text-base font-bold text-white leading-tight truncate">Dreamhatcher</h1>
               <p className="text-[11px] text-brand-600 uppercase tracking-wider font-medium">Admin Panel</p>
             </div>
           )}
@@ -53,7 +53,7 @@ export default function Layout() {
         {!collapsed && (
           <button
             onClick={toggleCollapsed}
-            className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
+            className="p-1 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-slate-700 transition-all"
             title="Collapse sidebar"
           >
             <ChevronsLeft size={18} />
@@ -77,10 +77,10 @@ export default function Layout() {
       ))}
 
       {/* Footer */}
-      <div className="mt-auto pt-4 border-t border-gray-200 mx-4 space-y-1">
+      <div className="mt-auto pt-4 border-t border-slate-700 mx-4 space-y-1">
         <button
           onClick={toggleCollapsed}
-          className={`flex items-center ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'} w-full py-2.5 rounded-lg text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all`}
+          className={`flex items-center ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'} w-full py-2.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-slate-700 transition-all`}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
@@ -88,7 +88,7 @@ export default function Layout() {
         </button>
         <button
           onClick={handleLogout}
-          className={`flex items-center ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'} w-full py-2.5 rounded-lg text-sm text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all`}
+          className={`flex items-center ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'} w-full py-2.5 rounded-lg text-sm text-gray-400 hover:text-red-400 hover:bg-red-900/30 transition-all`}
           title="Sign Out"
         >
           <LogOut size={18} />
@@ -102,7 +102,7 @@ export default function Layout() {
     <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar — collapsible to an icon rail so the content area widens */}
       <aside
-        className={`hidden lg:flex flex-col bg-white border-r border-gray-200 shrink-0 transition-[width] duration-300 ease-in-out ${
+        className={`hidden lg:flex flex-col bg-slate-800 border-r border-slate-700 shrink-0 transition-[width] duration-300 ease-in-out ${
           collapsed ? 'w-[68px]' : 'w-64'
         }`}
       >
@@ -113,7 +113,7 @@ export default function Layout() {
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setMobileOpen(false)}>
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
-          <aside className="relative w-64 h-full bg-white border-r border-gray-200 shadow-2xl" onClick={e => e.stopPropagation()}>
+          <aside className="relative w-64 h-full bg-slate-800 border-r border-slate-700 shadow-2xl" onClick={e => e.stopPropagation()}>
             <Sidebar />
           </aside>
         </div>
@@ -122,12 +122,12 @@ export default function Layout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile top bar */}
-        <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200">
-          <button onClick={() => setMobileOpen(true)} className="text-gray-500 hover:text-gray-700">
+        <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-slate-800 border-b border-slate-700">
+          <button onClick={() => setMobileOpen(true)} className="text-gray-400 hover:text-gray-200">
             <Menu size={22} />
           </button>
-          <h1 className="text-sm font-semibold text-gray-800">Dreamhatcher Admin</h1>
-          <button onClick={handleLogout} className="text-gray-500 hover:text-red-600">
+          <h1 className="text-sm font-semibold text-white">Dreamhatcher Admin</h1>
+          <button onClick={handleLogout} className="text-gray-400 hover:text-red-400">
             <LogOut size={18} />
           </button>
         </header>

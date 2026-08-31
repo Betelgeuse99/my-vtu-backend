@@ -35,12 +35,12 @@ function WalletAdjustModal({ open, user, onClose, onSuccess }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
-      <div className="relative w-full max-w-md bg-white border border-gray-200 rounded-2xl shadow-2xl p-6 toast-enter" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-gray-900 mb-1">Adjust Wallet Balance</h3>
-        <p className="text-sm text-gray-500 mb-5">
+      <div className="relative w-full max-w-md bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-6 toast-enter" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-white mb-1">Adjust Wallet Balance</h3>
+        <p className="text-sm text-slate-400 mb-5">
           {user.full_name || 'User'} — {user.email}
           <br />
-          Current balance: <span className="text-gray-800 font-medium">₦{Number(user.wallet_balance || 0).toLocaleString()}</span>
+          Current balance: <span className="text-white font-medium">₦{Number(user.wallet_balance || 0).toLocaleString()}</span>
         </p>
 
         {/* Action toggle */}
@@ -54,7 +54,7 @@ function WalletAdjustModal({ open, user, onClose, onSuccess }) {
                   ? a === 'credit'
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                     : 'bg-red-50 text-red-600 border-red-200'
-                  : 'bg-white text-gray-400 border-gray-200 hover:text-gray-600'
+                  : 'bg-slate-700 text-slate-400 border-slate-600 hover:text-slate-200'
               }`}
             >
               {a === 'credit' ? '+ Credit' : '− Debit'}
@@ -64,7 +64,7 @@ function WalletAdjustModal({ open, user, onClose, onSuccess }) {
 
         <div className="space-y-3">
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Amount (₦)</label>
+            <label className="block text-sm text-slate-400 mb-1">Amount (₦)</label>
             <input
               type="number"
               min="1"
@@ -76,7 +76,7 @@ function WalletAdjustModal({ open, user, onClose, onSuccess }) {
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Reason <span className="text-red-500">*</span></label>
+            <label className="block text-sm text-slate-400 mb-1">Reason <span className="text-red-400">*</span></label>
             <input
               type="text"
               value={reason}
@@ -134,11 +134,11 @@ export default function Users() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-          <p className="text-sm text-gray-600 mt-1">{pagination.total} registered users</p>
+          <h1 className="text-2xl font-bold text-white">Users</h1>
+          <p className="text-sm text-slate-400 mt-1">{pagination.total} registered users</p>
         </div>
         <div className="relative w-full sm:w-80">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             type="text"
             value={search}
@@ -149,11 +149,11 @@ export default function Users() {
         </div>
       </div>
 
-      <div className="card overflow-hidden !p-0">
+      <div className="card overflow-hidden !p-0 bg-slate-800 border-2 border-slate-700">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-gray-300 bg-gray-50 text-left text-gray-700 text-xs uppercase tracking-wider">
+              <tr className="border-b-2 border-slate-700 bg-slate-700/50 text-left text-slate-300 text-xs uppercase tracking-wider">
                 <th className="px-5 py-3 font-bold">User</th>
                 <th className="px-5 py-3 font-bold">Phone</th>
                 <th className="px-5 py-3 text-right font-bold">Balance</th>
@@ -163,37 +163,37 @@ export default function Users() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} className="px-5 py-12 text-center text-gray-500">
-                  <Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-500" /> Loading…
+                <tr><td colSpan={5} className="px-5 py-12 text-center text-slate-400">
+                  <Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-400" /> Loading…
                 </td></tr>
               ) : users.length === 0 ? (
-                <tr><td colSpan={5} className="px-5 py-12 text-center text-gray-500">No users found</td></tr>
+                <tr><td colSpan={5} className="px-5 py-12 text-center text-slate-400">No users found</td></tr>
               ) : (
                 users.map(u => (
                   <tr key={u.id} className="table-row">
                     <td className="px-5 py-3">
                       <div>
-                        <p className="font-bold text-gray-900">{u.full_name || '—'}</p>
-                        <p className="text-xs text-gray-600 truncate max-w-[200px]">{u.email}</p>
+                        <p className="font-bold text-white">{u.full_name || '—'}</p>
+                        <p className="text-xs text-slate-400 truncate max-w-[200px]">{u.email}</p>
                       </div>
                     </td>
-                    <td className="px-5 py-3 text-gray-700">{u.phone_number || '—'}</td>
-                    <td className="px-5 py-3 text-right font-mono font-bold text-gray-900">
+                    <td className="px-5 py-3 text-slate-300">{u.phone_number || '—'}</td>
+                    <td className="px-5 py-3 text-right font-mono font-bold text-white">
                       ₦{Number(u.wallet_balance || 0).toLocaleString()}
                     </td>
                     <td className="px-5 py-3">
                       {u.is_admin ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600">
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-400">
                           <Shield size={12} /> Admin
                         </span>
                       ) : (
-                        <span className="text-xs text-gray-700">User</span>
+                        <span className="text-xs text-slate-300">User</span>
                       )}
                     </td>
                     <td className="px-5 py-3 text-right">
                       <button
                         onClick={() => setAdjustUser(u)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 transition-all"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-all"
                       >
                         <DollarSign size={13} /> Adjust
                       </button>
@@ -207,8 +207,8 @@ export default function Users() {
 
         {/* Pagination */}
         {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200">
-            <p className="text-xs text-gray-500">
+          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-700">
+            <p className="text-xs text-slate-400">
               Page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
             </p>
             <div className="flex gap-2">

@@ -32,16 +32,16 @@ function EditRow({ plan, onSave, onCancel, provider }) {
 
   if (provider === 'bigisub') {
     return (
-      <tr className="table-row bg-brand-50/50">
+      <tr className="table-row bg-brand-900/20">
         <td className="px-5 py-3">
-          <p className="font-bold text-gray-900">{plan.volume}</p>
-          <p className="text-xs font-medium text-gray-600">{plan.validity}</p>
+          <p className="font-bold text-white">{plan.volume}</p>
+          <p className="text-xs font-medium text-slate-400">{plan.validity}</p>
         </td>
-        <td className="px-5 py-3 text-xs font-semibold text-gray-700 font-mono">{plan.bigi_plan_id ? `#${plan.bigi_plan_id}` : '—'}</td>
-        <td className="px-5 py-3 font-mono text-xs font-semibold text-gray-700">₦{Number(plan.buy_price || 0).toLocaleString()}</td>
+        <td className="px-5 py-3 text-xs font-semibold text-slate-300 font-mono">{plan.bigi_plan_id ? `#${plan.bigi_plan_id}` : '—'}</td>
+        <td className="px-5 py-3 font-mono text-xs font-semibold text-slate-300">₦{Number(plan.buy_price || 0).toLocaleString()}</td>
         <td className="px-5 py-3">
           <div className="flex items-center gap-2">
-            <span className="text-gray-500 text-sm">₦</span>
+          <span className="text-slate-400 text-sm">₦</span>
             <input type="number" value={price} onChange={e => setPrice(e.target.value)} className="input !w-28 !py-1.5" autoFocus />
           </div>
         </td>
@@ -63,18 +63,18 @@ function EditRow({ plan, onSave, onCancel, provider }) {
   }
 
   return (
-    <tr className="table-row bg-purple-50/50">
+    <tr className="table-row bg-purple-900/20">
       <td className="px-5 py-3">
-        <p className="font-bold text-gray-900">{plan.volume}</p>
-        <p className="text-xs font-medium text-gray-600">{plan.validity}</p>
+        <p className="font-bold text-white">{plan.volume}</p>
+        <p className="text-xs font-medium text-slate-400">{plan.validity}</p>
       </td>
-      <td className="px-5 py-3 text-xs font-semibold text-gray-700 font-mono">{plan.alrahuz_plan_id ? `#${plan.alrahuz_plan_id}` : '—'}</td>
-      <td className="px-5 py-3 font-mono text-xs font-semibold text-gray-700">
+      <td className="px-5 py-3 text-xs font-semibold text-slate-300 font-mono">{plan.alrahuz_plan_id ? `#${plan.alrahuz_plan_id}` : '—'}</td>
+      <td className="px-5 py-3 font-mono text-xs font-semibold text-slate-300">
         {plan.alrahuz_buy_price != null ? `₦${Number(plan.alrahuz_buy_price).toLocaleString()}` : '—'}
       </td>
       <td className="px-5 py-3">
         <div className="flex items-center gap-2">
-          <span className="text-gray-500 text-sm">₦</span>
+          <span className="text-slate-400 text-sm">₦</span>
           <input type="number" value={price} onChange={e => setPrice(e.target.value)} className="input !w-28 !py-1.5" autoFocus />
         </div>
       </td>
@@ -106,14 +106,14 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
       <div className="flex items-center gap-2 px-1">
         <div className={`w-2 h-6 rounded-full ${isBigi ? 'bg-brand-600' : 'bg-purple-600'}`} />
         <h3 className={`text-base font-bold ${headerColor}`}>{providerLabel} Plans</h3>
-        <span className="text-sm font-semibold text-gray-600">— {plans.length} plans from {providerLabel} API</span>
+        <span className="text-sm font-semibold text-slate-400">— {plans.length} plans from {providerLabel} API</span>
       </div>
 
-      <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden">
+      <div className="bg-slate-800 border-2 border-slate-700 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-gray-300 bg-gray-50 text-left text-gray-700 text-xs uppercase tracking-wider">
+              <tr className="border-b-2 border-slate-700 bg-slate-700/50 text-left text-slate-300 text-xs uppercase tracking-wider">
                 <th className="px-5 py-3 font-bold">Plan</th>
                 <th className="px-5 py-3 font-bold">{providerLabel} Plan ID</th>
                 <th className="px-5 py-3 font-bold">{providerLabel} Buy Price</th>
@@ -124,12 +124,12 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={colCount} className="px-5 py-12 text-center text-gray-600">
-                  <Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-500" /> Loading {providerLabel} plans…
+                <tr><td colSpan={colCount} className="px-5 py-12 text-center text-slate-400">
+                  <Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-400" /> Loading {providerLabel} plans…
                 </td></tr>
               ) : plans.length === 0 ? (
-                <tr><td colSpan={colCount} className="px-5 py-12 text-center text-gray-600">
-                  <Wifi size={24} className="mx-auto mb-2 text-gray-400" /> No {providerLabel} plans available for this network
+                <tr><td colSpan={colCount} className="px-5 py-12 text-center text-slate-400">
+                  <Wifi size={24} className="mx-auto mb-2 text-slate-500" /> No {providerLabel} plans available for this network
                 </td></tr>
               ) : (
                 plans.map(plan => {
@@ -140,30 +140,30 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
                   return (
                     <tr key={key} className="table-row">
                       <td className="px-5 py-3">
-                        <p className="font-bold text-gray-900">{plan.volume}</p>
-                        <p className="text-xs font-medium text-gray-600">{plan.validity}</p>
+                        <p className="font-bold text-white">{plan.volume}</p>
+                        <p className="text-xs font-medium text-slate-400">{plan.validity}</p>
                       </td>
                       {isBigi ? (
                         <>
-                          <td className="px-5 py-3 text-xs font-semibold text-gray-700 font-mono">{plan.bigi_plan_id ? `#${plan.bigi_plan_id}` : '—'}</td>
-                          <td className="px-5 py-3 font-mono text-xs font-semibold text-gray-700">₦{Number(plan.buy_price || 0).toLocaleString()}</td>
+                          <td className="px-5 py-3 text-xs font-semibold text-slate-300 font-mono">{plan.bigi_plan_id ? `#${plan.bigi_plan_id}` : '—'}</td>
+                          <td className="px-5 py-3 font-mono text-xs font-semibold text-slate-300">₦{Number(plan.buy_price || 0).toLocaleString()}</td>
                         </>
                       ) : (
                         <>
-                          <td className="px-5 py-3 text-xs font-semibold text-gray-700 font-mono">{plan.alrahuz_plan_id ? `#${plan.alrahuz_plan_id}` : '—'}</td>
-                          <td className="px-5 py-3 font-mono text-xs font-semibold text-gray-700">
+                          <td className="px-5 py-3 text-xs font-semibold text-slate-300 font-mono">{plan.alrahuz_plan_id ? `#${plan.alrahuz_plan_id}` : '—'}</td>
+                          <td className="px-5 py-3 font-mono text-xs font-semibold text-slate-300">
                             {plan.alrahuz_buy_price != null ? `₦${Number(plan.alrahuz_buy_price).toLocaleString()}` : '—'}
                           </td>
                         </>
                       )}
-                      <td className="px-5 py-3 font-mono text-sm font-bold text-gray-900">₦{Number(plan.retail_price || 0).toLocaleString()}</td>
+                      <td className="px-5 py-3 font-mono text-sm font-bold text-white">₦{Number(plan.retail_price || 0).toLocaleString()}</td>
                       <td className="px-5 py-3">
                         {plan.is_active ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400">
                             <ToggleRight size={16} /> Active
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-700">
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-400">
                             <ToggleLeft size={16} /> Inactive
                           </span>
                         )}
@@ -237,10 +237,10 @@ export default function Plans() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Data Plans</h1>
-          <p className="text-sm text-gray-600 mt-1">Manage retail pricing and availability — each provider's plans shown separately</p>
+          <h1 className="text-2xl font-bold text-white">Data Plans</h1>
+          <p className="text-sm text-slate-400 mt-1">Manage retail pricing and availability — each provider's plans shown separately</p>
         </div>
-        <div className="flex gap-2 bg-gray-100 p-1 rounded-xl border-2 border-gray-200">
+        <div className="flex gap-2 bg-slate-700 p-1 rounded-xl border-2 border-slate-600">
           {Object.entries(networkNames).map(([id, name]) => (
             <button
               key={id}
@@ -248,7 +248,7 @@ export default function Plans() {
               className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
                 network === Number(id)
                   ? 'bg-brand-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-white'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-600'
               }`}
             >
               {name}
@@ -258,11 +258,11 @@ export default function Plans() {
       </div>
 
       <div className="flex items-center gap-2 text-sm">
-        <span className="font-semibold text-gray-700">Active route:</span>
+        <span className="font-semibold text-slate-300">Active route:</span>
         <span className={`font-bold ${provider === 'alrahuz' ? 'text-purple-700' : 'text-brand-700'}`}>
           {provider === 'alrahuz' ? 'Alrahuzdata' : 'Bigisub'}
         </span>
-        <span className="text-gray-500">(change in Provider Routing)</span>
+        <span className="text-slate-500">(change in Provider Routing)</span>
       </div>
 
       <ProviderTable plans={bigiPlans} provider="bigisub" editingId={editingId} setEditingId={setEditingId} onSave={fetchBigiPlans} loading={bigiLoading} />

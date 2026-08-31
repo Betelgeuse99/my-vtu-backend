@@ -23,15 +23,15 @@ const serviceLabels = {
 
 function StatCard({ icon: Icon, label, value, color, sub }) {
   return (
-    <div className="bg-white border-2 border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-brand-300 transition-all">
+    <div className="bg-slate-800 border-2 border-slate-700 rounded-xl p-5 shadow-sm hover:shadow-md hover:border-brand-500 transition-all">
       <div className="flex items-start justify-between mb-3">
         <div className={`p-2.5 rounded-xl ${color}`}>
           <Icon size={20} />
         </div>
       </div>
-      <p className="text-2xl font-extrabold text-gray-900 tabular-nums">{value}</p>
-      <p className="text-sm font-semibold text-gray-700 mt-1">{label}</p>
-      {sub && <p className="text-xs font-medium text-gray-500 mt-1">{sub}</p>}
+      <p className="text-2xl font-extrabold text-white tabular-nums">{value}</p>
+      <p className="text-sm font-semibold text-slate-300 mt-1">{label}</p>
+      {sub && <p className="text-xs font-medium text-slate-400 mt-1">{sub}</p>}
     </div>
   )
 }
@@ -41,8 +41,8 @@ function ProviderBadge({ provider }) {
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
       isBigi
-        ? 'bg-brand-50 text-brand-700 border-brand-300'
-        : 'bg-purple-50 text-purple-700 border-purple-300'
+        ? 'bg-brand-900/50 text-brand-300 border-brand-700'
+        : 'bg-purple-900/50 text-purple-300 border-purple-700'
     }`}>
       {isBigi ? 'Bigisub' : 'Alrahuz'}
     </span>
@@ -53,9 +53,9 @@ const CHART_COLORS = ['#0d9488', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#0
 
 function MiniStat({ label, value }) {
   return (
-    <div className="p-3 rounded-xl bg-gray-50 border-2 border-gray-200">
-      <p className="text-lg font-bold text-gray-900 tabular-nums">{value}</p>
-      <p className="text-xs font-semibold text-gray-600 mt-0.5">{label}</p>
+    <div className="p-3 rounded-xl bg-slate-700/50 border-2 border-slate-600">
+      <p className="text-lg font-bold text-white tabular-nums">{value}</p>
+      <p className="text-xs font-semibold text-slate-300 mt-0.5">{label}</p>
     </div>
   )
 }
@@ -78,10 +78,10 @@ function DailyBarChart({ data }) {
               <title>{`${d.date}: ${d.count} purchases · ₦${Number(d.amount || 0).toLocaleString()}`}</title>
             </rect>
             {(d.count || 0) > 0 && (
-              <text x={x + w / 2} y={y - 4} textAnchor="middle" fontSize="9" fill="#374151" className="tabular-nums">{d.count}</text>
+              <text x={x + w / 2} y={y - 4} textAnchor="middle" fontSize="9" fill="#e2e8f0" className="tabular-nums">{d.count}</text>
             )}
             {i % 2 === 0 && (
-              <text x={x + w / 2} y={H + 14} textAnchor="middle" fontSize="8" fill="#6b7280">{d.date.slice(5)}</text>
+              <text x={x + w / 2} y={H + 14} textAnchor="middle" fontSize="8" fill="#94a3b8">{d.date.slice(5)}</text>
             )}
           </g>
         )
@@ -98,7 +98,7 @@ function DonutChart({ data }) {
   return (
     <div className="flex flex-col sm:flex-row items-center gap-6">
       <svg viewBox="0 0 140 140" className="w-32 h-32 shrink-0">
-        <circle cx="70" cy="70" r={R} fill="none" stroke="#e5e7eb" strokeWidth="15" />
+        <circle cx="70" cy="70" r={R} fill="none" stroke="#334155" strokeWidth="15" />
         <g transform="rotate(-90 70 70)">
           {rows.map((d, i) => {
             const len = ((d.count || 0) / total) * C
@@ -112,15 +112,15 @@ function DonutChart({ data }) {
             return seg
           })}
         </g>
-        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" fontSize="18" fontWeight="bold" fill="#111827" className="tabular-nums">{total}</text>
+        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" fontSize="18" fontWeight="bold" fill="#f1f5f9" className="tabular-nums">{total}</text>
       </svg>
       <div className="flex-1 w-full min-w-0 space-y-1.5">
         {rows.map((d, i) => (
           <div key={d.service_type || i} className="flex items-center gap-2 text-xs">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
-            <span className="text-gray-700 capitalize flex-1 min-w-0 truncate">{d.service_type || '—'}</span>
-            <span className="text-gray-900 font-semibold tabular-nums">{d.count}</span>
-            <span className="text-gray-500 tabular-nums w-10 text-right">{Math.round(((d.count || 0) / total) * 100)}%</span>
+            <span className="text-slate-300 capitalize flex-1 min-w-0 truncate">{d.service_type || '—'}</span>
+            <span className="text-white font-semibold tabular-nums">{d.count}</span>
+            <span className="text-slate-400 tabular-nums w-10 text-right">{Math.round(((d.count || 0) / total) * 100)}%</span>
           </div>
         ))}
       </div>
@@ -135,15 +135,15 @@ function ProviderBars({ data }) {
     <div className="space-y-2">
       {rows.map((d) => (
         <div key={d.provider} className="flex items-center gap-3">
-          <span className="text-xs font-semibold text-gray-700 w-28 truncate">{d.provider || '—'}</span>
-          <div className="flex-1 h-4 bg-gray-200 rounded overflow-hidden">
+          <span className="text-xs font-semibold text-slate-300 w-28 truncate">{d.provider || '—'}</span>
+          <div className="flex-1 h-4 bg-slate-700 rounded overflow-hidden">
             <div
-              className="h-full rounded bg-gradient-to-r from-brand-600 to-brand-400 transition-[width] duration-300"
+              className="h-full rounded bg-gradient-to-r from-brand-500 to-brand-400 transition-[width] duration-300"
               style={{ width: `${Math.max(2, ((d.count || 0) / max) * 100)}%` }}
             />
           </div>
-          <span className="text-xs font-semibold text-gray-800 tabular-nums w-12 text-right">{d.count}</span>
-          <span className="text-xs text-gray-600 tabular-nums w-24 text-right">₦{Number(d.amount || 0).toLocaleString()}</span>
+          <span className="text-xs font-semibold text-slate-200 tabular-nums w-12 text-right">{d.count}</span>
+          <span className="text-xs text-slate-400 tabular-nums w-24 text-right">₦{Number(d.amount || 0).toLocaleString()}</span>
         </div>
       ))}
     </div>
@@ -199,11 +199,11 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-600 mt-1">Platform overview and provider status</p>
+          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+          <p className="text-sm text-slate-400 mt-1">Platform overview and provider status</p>
         </div>
         <div className="flex items-center gap-3">
-          {lastUpdated && <span className="text-xs font-medium text-gray-500">Updated {fmtLagos(lastUpdated, { date: false })}</span>}
+          {lastUpdated && <span className="text-xs font-medium text-slate-500">Updated {fmtLagos(lastUpdated, { date: false })}</span>}
           <button onClick={fetchData} className="btn-secondary" disabled={loading}>
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
@@ -211,17 +211,17 @@ export default function Dashboard() {
       </div>
 
       {errorList.length > 0 && (
-        <div className="flex items-start gap-3 px-4 py-3 rounded-lg border-2 border-red-300 bg-red-50">
-          <AlertTriangle size={18} className="text-red-600 shrink-0 mt-0.5" />
-          <div className="text-sm text-red-700 space-y-1">{errorList.map((e, i) => <p key={i}>{e}</p>)}</div>
+        <div className="flex items-start gap-3 px-4 py-3 rounded-lg border-2 border-red-700 bg-red-900/30">
+          <AlertTriangle size={18} className="text-red-400 shrink-0 mt-0.5" />
+          <div className="text-sm text-red-300 space-y-1">{errorList.map((e, i) => <p key={i}>{e}</p>)}</div>
         </div>
       )}
 
       {!stats && loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
           {[0, 1, 2, 3, 4].map(i => (
-            <div key={i} className="bg-white border-2 border-gray-200 rounded-xl h-28 flex items-center justify-center">
-              <Loader2 size={20} className="animate-spin text-brand-500" />
+            <div key={i} className="bg-slate-800 border-2 border-slate-700 rounded-xl h-28 flex items-center justify-center">
+              <Loader2 size={20} className="animate-spin text-brand-400" />
             </div>
           ))}
         </div>
@@ -235,24 +235,24 @@ export default function Dashboard() {
             <StatCard icon={Banknote} label="Revenue Generated" value={fmtNgn(stats.total_revenue)} color="bg-brand-100 text-brand-700" sub="Successful purchases only" />
           </div>
 
-          <div className="card">
+          <div className="card bg-slate-800 border-2 border-slate-700">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">Active Provider Routes</h2>
-                <p className="text-sm text-gray-600">Which provider handles each service</p>
+                <h2 className="text-lg font-bold text-white">Active Provider Routes</h2>
+                <p className="text-sm text-slate-400">Which provider handles each service</p>
               </div>
-              <ArrowLeftRight size={20} className="text-gray-500" />
+              <ArrowLeftRight size={20} className="text-slate-400" />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               {Object.entries(stats.active_routes || providers || {}).map(([svc, prov]) => {
                 const Icon = serviceIcons[svc] || Zap
                 return (
-                  <div key={svc} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border-2 border-gray-200">
-                    <div className="p-2 rounded-lg bg-white border-2 border-gray-200">
-                      <Icon size={16} className="text-gray-600" />
+                  <div key={svc} className="flex items-center gap-3 p-3 rounded-xl bg-slate-700/50 border-2 border-slate-600">
+                    <div className="p-2 rounded-lg bg-slate-800 border-2 border-slate-600">
+                      <Icon size={16} className="text-slate-300" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-gray-700">{serviceLabels[svc] || svc}</p>
+                      <p className="text-xs font-semibold text-slate-300">{serviceLabels[svc] || svc}</p>
                       <ProviderBadge provider={prov} />
                     </div>
                   </div>
@@ -261,27 +261,27 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="card">
-            <p className="text-sm font-semibold text-gray-700">
+          <div className="card bg-slate-800 border-2 border-slate-700">
+            <p className="text-sm font-semibold text-slate-300">
               Total Transactions:{' '}
-              <span className="text-gray-900 font-bold">{Number(stats.total_transactions || 0).toLocaleString()}</span>
+              <span className="text-white font-bold">{Number(stats.total_transactions || 0).toLocaleString()}</span>
             </p>
           </div>
         </>
       ) : null}
 
       {/* Recent transactions */}
-      <div className="card overflow-hidden !p-0">
-        <div className="flex items-center justify-between px-5 py-4 border-b-2 border-gray-200">
+      <div className="card overflow-hidden !p-0 bg-slate-800 border-2 border-slate-700">
+        <div className="flex items-center justify-between px-5 py-4 border-b-2 border-slate-700">
           <div>
-            <h2 className="text-base font-bold text-gray-900">Recent Transactions</h2>
-            <p className="text-xs text-gray-600 mt-0.5">Latest activity across the platform</p>
+            <h2 className="text-base font-bold text-white">Recent Transactions</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Latest activity across the platform</p>
           </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-gray-200 text-left text-gray-600 text-xs uppercase tracking-wider">
+              <tr className="border-b-2 border-slate-700 text-left text-slate-400 text-xs uppercase tracking-wider">
                 <th className="px-4 py-3 font-bold">Service</th>
                 <th className="px-4 py-3 font-bold">User</th>
                 <th className="px-4 py-3 font-bold">Phone</th>
@@ -294,10 +294,10 @@ export default function Dashboard() {
             <tbody>
               {loading && recent.length === 0 ? (
                 <tr><td colSpan={7} className="px-5 py-8 text-center">
-                  <Loader2 size={18} className="animate-spin mx-auto text-brand-500" />
+                  <Loader2 size={18} className="animate-spin mx-auto text-brand-400" />
                 </td></tr>
               ) : recent.length === 0 ? (
-                <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-600 text-sm">
+                <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-400 text-sm">
                   {errors.recent || 'No transactions yet'}
                 </td></tr>
               ) : (
@@ -305,23 +305,23 @@ export default function Dashboard() {
                   <tr key={tx.id} className="table-row">
                     <td className="px-4 py-3">
                       <div className="min-w-0">
-                        <p className="font-bold text-gray-900 capitalize">{tx.service_type || '—'}</p>
-                        <p className="text-xs text-gray-600 truncate max-w-[150px]">{tx.title}</p>
+                        <p className="font-bold text-white capitalize">{tx.service_type || '—'}</p>
+                        <p className="text-xs text-slate-400 truncate max-w-[150px]">{tx.title}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="min-w-0">
-                        <p className="text-gray-800 text-xs font-medium truncate max-w-[160px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
-                        <p className="text-xs text-gray-900 truncate max-w-[220px]">{tx.profiles?.email || ''}</p>
+                        <p className="text-slate-300 text-xs font-medium truncate max-w-[160px]">{tx.profiles?.full_name || tx.user_id?.slice(0, 8) || '—'}</p>
+                        <p className="text-xs text-slate-400 truncate max-w-[220px]">{tx.profiles?.email || ''}</p>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-900 whitespace-nowrap">{tx.recipient || '—'}</td>
-                    <td className="px-4 py-3 text-right font-mono font-bold text-gray-900 whitespace-nowrap">
+                    <td className="px-4 py-3 text-xs text-slate-300 whitespace-nowrap">{tx.recipient || '—'}</td>
+                    <td className="px-4 py-3 text-right font-mono font-bold text-white whitespace-nowrap">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
                     <td className="px-4 py-3">{statusBadge(tx.status)}</td>
                     <td className="px-4 py-3"><CarrierBadge provider={tx.provider} /></td>
-                    <td className="px-4 py-3 text-xs text-gray-900 whitespace-nowrap">{fmtLagos(tx.created_at)}</td>
+                    <td className="px-4 py-3 text-xs text-slate-300 whitespace-nowrap">{fmtLagos(tx.created_at)}</td>
                   </tr>
                 ))
               )}
@@ -332,13 +332,13 @@ export default function Dashboard() {
 
       {/* Purchase statistics */}
       {charts ? (
-        <div className="card">
+        <div className="card bg-slate-800 border-2 border-slate-700">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Purchase Statistics</h2>
-              <p className="text-sm text-gray-600">Last 14 days of platform activity</p>
+              <h2 className="text-lg font-bold text-white">Purchase Statistics</h2>
+              <p className="text-sm text-slate-400">Last 14 days of platform activity</p>
             </div>
-            <BarChart3 size={20} className="text-gray-500" />
+            <BarChart3 size={20} className="text-slate-400" />
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             <MiniStat label="Purchases" value={Number(charts.totals?.purchases || 0).toLocaleString()} />
@@ -348,22 +348,22 @@ export default function Dashboard() {
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="min-w-0">
-              <h3 className="text-sm font-bold text-gray-800 mb-3">Purchases per Day</h3>
+              <h3 className="text-sm font-bold text-slate-200 mb-3">Purchases per Day</h3>
               <DailyBarChart data={charts.daily} />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-bold text-gray-800 mb-3">By Service</h3>
+              <h3 className="text-sm font-bold text-slate-200 mb-3">By Service</h3>
               <DonutChart data={charts.byService} />
             </div>
           </div>
           <div className="mt-8">
-            <h3 className="text-sm font-bold text-gray-800 mb-3">By Provider</h3>
+            <h3 className="text-sm font-bold text-slate-200 mb-3">By Provider</h3>
             <ProviderBars data={charts.byProvider} />
           </div>
         </div>
       ) : loading ? (
-        <div className="card h-40 flex items-center justify-center">
-          <Loader2 size={20} className="animate-spin text-gray-500" />
+        <div className="card bg-slate-800 border-2 border-slate-700 h-40 flex items-center justify-center">
+          <Loader2 size={20} className="animate-spin text-slate-400" />
         </div>
       ) : null}
     </div>

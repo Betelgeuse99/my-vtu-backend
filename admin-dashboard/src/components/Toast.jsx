@@ -32,9 +32,9 @@ export function ToastProvider({ children }) {
   }
 
   const bgColors = {
-    success: 'border-emerald-200 bg-emerald-50',
-    error:   'border-red-200 bg-red-50',
-    info:    'border-blue-200 bg-blue-50',
+    success: 'border-emerald-700 bg-emerald-900/80',
+    error:   'border-red-700 bg-red-900/80',
+    info:    'border-blue-700 bg-blue-900/80',
   }
 
   return (
@@ -48,8 +48,8 @@ export function ToastProvider({ children }) {
             className={`toast-enter flex items-start gap-3 px-4 py-3 rounded-lg border shadow-xl ${bgColors[t.type] || bgColors.info}`}
           >
             {icons[t.type] || icons.info}
-            <span className="text-sm text-gray-700 flex-1">{t.message}</span>
-            <button onClick={() => remove(t.id)} className="text-gray-400 hover:text-gray-600 shrink-0 mt-0.5">
+            <span className="text-sm text-slate-200 flex-1">{t.message}</span>
+            <button onClick={() => remove(t.id)} className="text-slate-400 hover:text-slate-200 shrink-0 mt-0.5">
               <X size={14} />
             </button>
           </div>

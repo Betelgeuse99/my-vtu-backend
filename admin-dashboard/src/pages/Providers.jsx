@@ -20,14 +20,14 @@ function ServiceCard({ service, current, onChange, loading }) {
   const isBigi = current === 'bigisub'
 
   return (
-    <div className="card hover:border-brand-300 transition-all">
+    <div className="card hover:border-brand-500 transition-all bg-slate-800 border-2 border-slate-700">
       <div className="flex items-start gap-3 mb-4">
-        <div className="p-2.5 rounded-xl bg-gray-100 border border-gray-200">
-          <Icon size={20} className="text-gray-500" />
+        <div className="p-2.5 rounded-xl bg-slate-700 border border-slate-600">
+          <Icon size={20} className="text-slate-300" />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-bold text-gray-900">{label}</h3>
-          <p className="text-xs text-gray-600">{desc}</p>
+          <h3 className="text-sm font-bold text-white">{label}</h3>
+          <p className="text-xs text-slate-400">{desc}</p>
         </div>
       </div>
 
@@ -42,7 +42,7 @@ function ServiceCard({ service, current, onChange, loading }) {
                 ? p === 'bigisub'
                   ? 'bg-brand-50 text-brand-700 border-brand-200 shadow-sm'
                   : 'bg-purple-50 text-purple-700 border-purple-200 shadow-sm'
-                : 'bg-white text-gray-600 border-gray-200 hover:text-gray-800 hover:border-gray-300'
+                : 'bg-slate-700 text-slate-300 border-slate-600 hover:text-white hover:border-slate-500'
             }`}
           >
             {p === 'bigisub' ? 'Bigisub' : 'Alrahuz'}
@@ -51,7 +51,7 @@ function ServiceCard({ service, current, onChange, loading }) {
       </div>
 
       <div className="mt-3 flex items-center gap-2">
-        <span className="text-xs text-gray-700">Active:</span>
+        <span className="text-xs text-slate-400">Active:</span>
         <span className={`text-xs font-medium ${isBigi ? 'text-brand-600' : 'text-purple-600'}`}>
           {isBigi ? 'Bigisub' : 'Alrahuzdata'}
         </span>
@@ -116,8 +116,8 @@ export default function Providers() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Provider Routing</h1>
-          <p className="text-sm text-gray-600 mt-1">Control which VTU provider handles each service</p>
+          <h1 className="text-2xl font-bold text-white">Provider Routing</h1>
+          <p className="text-sm text-slate-400 mt-1">Control which VTU provider handles each service</p>
         </div>
         <button onClick={fetchRoutes} className="btn-secondary" disabled={loading}>
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -127,18 +127,18 @@ export default function Providers() {
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 size={28} className="animate-spin text-brand-500" />
+          <Loader2 size={28} className="animate-spin text-brand-400" />
         </div>
       ) : (
         <>
           {/* Global Toggle */}
-          <div className="card">
+          <div className="card bg-slate-800 border-2 border-slate-700">
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
               <div className="flex items-center gap-3 flex-1">
-                <ArrowRightLeft size={20} className="text-gray-400" />
+                <ArrowRightLeft size={20} className="text-slate-400" />
                 <div>
-                  <h2 className="text-base font-bold text-gray-900">Master Global Switch</h2>
-                  <p className="text-xs text-gray-600">
+                  <h2 className="text-base font-bold text-white">Master Global Switch</h2>
+                  <p className="text-xs text-slate-400">
                     {isGlobalMode
                       ? `All services currently routed through ${globalProvider === 'bigisub' ? 'Bigisub' : 'Alrahuzdata'}`
                       : 'Services are split across providers — use per-service overrides below'}
@@ -146,14 +146,14 @@ export default function Providers() {
                 </div>
               </div>
 
-              <div className="flex gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
+              <div className="flex gap-2 bg-slate-700 p-1 rounded-xl border border-slate-600">
                 <button
                   disabled={switching}
                   onClick={() => setConfirmGlobal({ provider: 'alrahuz' })}
                   className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
                     isGlobalMode && globalProvider === 'alrahuz'
                       ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   {switching && confirmGlobal?.provider === 'alrahuz'
@@ -166,7 +166,7 @@ export default function Providers() {
                   className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
                     isGlobalMode && globalProvider === 'bigisub'
                       ? 'bg-brand-600 text-white shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   {switching && confirmGlobal?.provider === 'bigisub'
@@ -179,7 +179,7 @@ export default function Providers() {
 
           {/* Per-Service Overrides */}
           <div>
-            <h2 className="text-base font-bold text-gray-900 mb-3">Per-Service Overrides</h2>
+            <h2 className="text-base font-bold text-white mb-3">Per-Service Overrides</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {VALID_SERVICES.map(svc => (
                 <ServiceCard

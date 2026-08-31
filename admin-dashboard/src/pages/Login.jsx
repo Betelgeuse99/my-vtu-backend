@@ -32,21 +32,21 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-900">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-4">
             <img src={`${import.meta.env.BASE_URL}dhtlogo.png`} alt="Dreamhatcher Logo" className="w-20 h-20 object-contain" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Dreamhatcher Admin</h1>
-          <p className="text-sm text-gray-500 mt-1">Sign in to manage your VTU platform</p>
+          <h1 className="text-2xl font-bold text-white">Dreamhatcher Admin</h1>
+          <p className="text-sm text-slate-400 mt-1">Sign in to manage your VTU platform</p>
         </div>
 
-        <form onSubmit={handleLogin} className="card space-y-4">
+        <form onSubmit={handleLogin} className="bg-slate-800 border-2 border-slate-700 rounded-xl p-5 shadow-sm space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">Email</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">Email</label>
             <div className="relative">
-              <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
                 type="email"
                 value={email}
@@ -58,9 +58,9 @@ export default function Login() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">Password</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
             <div className="relative">
-              <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
                 type="password"
                 value={password}
