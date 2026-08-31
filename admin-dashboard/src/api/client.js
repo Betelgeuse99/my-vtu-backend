@@ -16,6 +16,15 @@ api.interceptors.response.use(
   async (error) => {
     const original = error.config
 
+    // The dashboard only calls admin-gated endpoints; a 403 means the signed-in
+    // account is not an admin — drop the session and bounce to login instead of
+    // showing a wall of errors.
+    if (error.response?.status === 403) {
+      clearStoredSession()
+      window.location.hash = '#/login'
+      return Promise.reject(error)
+    }
+
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true
 

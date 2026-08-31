@@ -150,6 +150,7 @@ async function verifyOtp(body: any) {
 async function login(body: any) {
   const email = String(body.email || "").toLowerCase().trim();
   const password = String(body.password || "").trim();
+  const requireAdmin = body.admin === true;
 
   if (!email || !password) {
     return json({ success: false, message: "Email and password required" }, 400);
@@ -162,7 +163,7 @@ async function login(body: any) {
     });
 
     if (authError || !authData.user) {
-      return json({ success: false, message: "Invalid credentials." }, 401);
+      return json({ success: false, message: "Invalid email or password" }, 401);
     }
 
     const { data: profile } = await getSupabase()
@@ -170,6 +171,16 @@ async function login(body: any) {
       .select("*")
       .eq("id", authData.user.id)
       .maybeSingle();
+
+    // Admin-dashboard logins must come from an admin account. Reject others with
+    // the same message as bad credentials so we don't leak whether an account exists.
+    if (requireAdmin) {
+      const isAdmin = profile && (profile.is_admin === true || profile.role === "admin");
+      if (!isAdmin) {
+        return json({ success: false, message: "Invalid email or password" }, 401);
+      }
+    }
+
     const { data: wallet } = await getSupabase()
       .from("wallets")
       .select("*")

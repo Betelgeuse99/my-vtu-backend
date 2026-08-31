@@ -625,6 +625,7 @@ app.post("/auth/refresh", async (req, res) => {
 app.post("/auth/login", async (req, res) => {
   const email = (req.body.email || "").toLowerCase().trim();
   const password = (req.body.password || "").trim();
+  const requireAdmin = req.body.admin === true;
 
   if (!email || !password) return res.status(400).json({ success: false, message: "Email and password required" });
 
@@ -632,10 +633,20 @@ app.post("/auth/login", async (req, res) => {
     const { data: authData, error: authError } = await supabaseAuth.auth.signInWithPassword({ email, password });
 
     if (authError || !authData.user) {
-      return res.status(401).json({ success: false, message: "Invalid credentials." });
+      return res.status(401).json({ success: false, message: "Invalid email or password" });
     }
 
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", authData.user.id).maybeSingle();
+
+    // Admin-dashboard logins must come from an admin account. Reject others with
+    // the same message as bad credentials so we don't leak whether an account exists.
+    if (requireAdmin) {
+      const isAdmin = profile && (profile.is_admin === true || profile.role === "admin");
+      if (!isAdmin) {
+        return res.status(401).json({ success: false, message: "Invalid email or password" });
+      }
+    }
+
     const { data: wallet } = await supabase.from("wallets").select("*").eq("user_id", authData.user.id).maybeSingle();
 
     res.json({
