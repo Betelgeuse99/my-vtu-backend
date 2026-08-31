@@ -24,7 +24,7 @@
     @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-900/50 hover:bg-emerald-800/50 text-emerald-300 font-medium text-sm transition-all duration-150 border border-emerald-700;
   }
   .input {
-    @apply w-full px-3.5 py-2.5 rounded-lg bg-slate-700 border-2 border-slate-600 text-white text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all;
+    @apply w-full px-3.5 py-2.5 rounded-lg bg-slate-700 border-2 border-slate-600 text-slate-100 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all;
   }
   .badge-success {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-900/50 text-emerald-300 border border-emerald-700;
@@ -43,6 +43,252 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+   THEME TOKENS
+   :root  = light theme (a soft "10% darker than pure light" gray palette)
+   .dark  = the app's original dark theme
+   Every custom property holds "R G B" channels and is consumed by the Tailwind
+   color mappings in tailwind.config.js.
+--------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+
+  /* Neutrals — slate (light theme, tuned ~10% darker than a plain white UI) */
+  --s-50:  244 244 246;
+  --s-100: 39 39 44;       /* primary text (replaces text-white on surfaces) */
+  --s-200: 51 51 58;
+  --s-300: 74 74 83;       /* secondary text */
+  --s-400: 103 103 111;    /* muted text */
+  --s-500: 132 132 140;    /* faint text / icons */
+  --s-600: 185 185 192;    /* medium borders */
+  --s-700: 214 214 220;    /* nested surfaces + borders */
+  --s-800: 233 233 237;    /* cards */
+  --s-900: 222 222 227;    /* page background */
+  --s-950: 209 209 215;
+
+  /* Neutrals — gray */
+  --g-100: 24 24 27;
+  --g-200: 39 39 42;
+  --g-300: 55 55 61;
+  --g-400: 100 100 107;
+  --g-700: 75 75 82;
+  --g-800: 39 39 42;
+
+  /* Brand (teal) */
+  --b-50:  240 253 250;
+  --b-100: 204 251 241;
+  --b-200: 153 246 228;
+  --b-300: 15 118 110;     /* chip text */
+  --b-400: 13 148 136;
+  --b-500: 20 184 166;
+  --b-600: 13 148 136;
+  --b-700: 153 246 228;    /* chip border */
+  --b-800: 17 94 89;
+  --b-900: 204 251 241;    /* chip background */
+
+  /* Purple */
+  --p-50:  250 245 255;
+  --p-200: 233 213 255;
+  --p-300: 109 40 217;
+  --p-600: 147 51 234;
+  --p-700: 196 181 253;
+  --p-800: 107 33 168;
+  --p-900: 237 233 254;
+
+  /* Red */
+  --r-50:  254 242 242;
+  --r-200: 254 202 202;
+  --r-300: 185 28 28;
+  --r-400: 185 28 28;
+  --r-500: 220 38 38;
+  --r-600: 220 38 38;
+  --r-700: 252 165 165;
+  --r-800: 254 202 202;
+  --r-900: 254 226 226;
+
+  /* Amber */
+  --a-300: 180 83 9;
+  --a-400: 180 83 9;
+  --a-700: 252 211 77;
+  --a-900: 254 243 199;
+
+  /* Emerald */
+  --e-50:  236 253 245;
+  --e-200: 167 243 208;
+  --e-300: 4 120 87;
+  --e-400: 4 120 87;
+  --e-500: 5 150 105;
+  --e-600: 5 150 105;
+  --e-700: 110 231 183;
+  --e-800: 167 243 208;
+  --e-900: 209 250 229;
+
+  /* Blue */
+  --bl-300: 29 78 216;
+  --bl-500: 37 99 235;
+  --bl-700: 147 197 253;
+  --bl-900: 219 234 254;
+
+  /* Sky */
+  --sk-300: 3 105 161;
+  --sk-700: 125 211 252;
+  --sk-800: 186 230 254;
+  --sk-900: 224 242 254;
+
+  /* Yellow */
+  --y-300: 161 98 7;
+  --y-700: 253 224 71;
+  --y-900: 254 249 195;
+
+  /* Lime */
+  --l-300: 77 124 15;
+  --l-700: 190 242 100;
+  --l-900: 236 252 203;
+
+  /* Orange */
+  --o-300: 194 65 12;
+  --o-700: 253 186 116;
+  --o-900: 255 237 213;
+
+  /* Violet */
+  --v-300: 109 40 217;
+  --v-700: 196 181 253;
+  --v-900: 237 233 254;
+
+  /* Fuchsia */
+  --f-300: 162 28 175;
+  --f-700: 240 171 252;
+  --f-900: 250 232 255;
+
+  /* Charts + chrome */
+  --chart-track: 203 213 225;
+  --chart-text-strong: 51 65 85;
+  --chart-text-muted: 100 116 139;
+  --scroll-thumb: 148 163 184;
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* Neutrals — slate */
+  --s-50:  248 250 252;
+  --s-100: 241 245 249;
+  --s-200: 226 232 240;
+  --s-300: 203 213 225;
+  --s-400: 148 163 184;
+  --s-500: 100 116 139;
+  --s-600: 71 85 105;
+  --s-700: 51 65 85;
+  --s-800: 30 41 59;
+  --s-900: 15 23 42;
+  --s-950: 2 6 23;
+
+  /* Neutrals — gray */
+  --g-100: 243 244 246;
+  --g-200: 229 231 235;
+  --g-300: 209 213 219;
+  --g-400: 156 163 175;
+  --g-700: 55 65 81;
+  --g-800: 31 41 55;
+
+  /* Brand (teal) */
+  --b-50:  240 253 250;
+  --b-100: 204 251 241;
+  --b-200: 153 246 228;
+  --b-300: 94 234 212;
+  --b-400: 45 212 191;
+  --b-500: 20 184 166;
+  --b-600: 13 148 136;
+  --b-700: 15 118 110;
+  --b-800: 17 94 89;
+  --b-900: 19 78 74;
+
+  /* Purple */
+  --p-50:  250 245 255;
+  --p-200: 233 213 255;
+  --p-300: 216 180 254;
+  --p-600: 147 51 234;
+  --p-700: 126 34 206;
+  --p-800: 107 33 168;
+  --p-900: 88 28 135;
+
+  /* Red */
+  --r-50:  254 242 242;
+  --r-200: 254 202 202;
+  --r-300: 252 165 165;
+  --r-400: 248 113 113;
+  --r-500: 239 68 68;
+  --r-600: 220 38 38;
+  --r-700: 185 28 28;
+  --r-800: 153 27 27;
+  --r-900: 127 29 29;
+
+  /* Amber */
+  --a-300: 252 211 77;
+  --a-400: 251 191 36;
+  --a-700: 180 83 9;
+  --a-900: 120 53 15;
+
+  /* Emerald */
+  --e-50:  236 253 245;
+  --e-200: 167 243 208;
+  --e-300: 110 231 183;
+  --e-400: 52 211 153;
+  --e-500: 16 185 129;
+  --e-600: 5 150 105;
+  --e-700: 4 120 87;
+  --e-800: 6 95 70;
+  --e-900: 6 78 59;
+
+  /* Blue */
+  --bl-300: 147 197 253;
+  --bl-500: 59 130 246;
+  --bl-700: 29 78 216;
+  --bl-900: 30 58 138;
+
+  /* Sky */
+  --sk-300: 125 211 252;
+  --sk-700: 3 105 161;
+  --sk-800: 7 89 133;
+  --sk-900: 12 74 110;
+
+  /* Yellow */
+  --y-300: 253 224 71;
+  --y-700: 161 98 7;
+  --y-900: 113 63 18;
+
+  /* Lime */
+  --l-300: 190 242 100;
+  --l-700: 77 124 15;
+  --l-900: 54 83 20;
+
+  /* Orange */
+  --o-300: 253 186 116;
+  --o-700: 194 65 12;
+  --o-900: 124 45 18;
+
+  /* Violet */
+  --v-300: 196 181 253;
+  --v-700: 109 40 217;
+  --v-900: 76 29 149;
+
+  /* Fuchsia */
+  --f-300: 240 171 252;
+  --f-700: 162 28 175;
+  --f-900: 112 26 117;
+
+  /* Charts + chrome */
+  --chart-track: 51 65 85;
+  --chart-text-strong: 226 232 240;
+  --chart-text-muted: 148 163 184;
+  --scroll-thumb: 71 85 105;
+}
+
+body {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
 /* Toast animation */
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }
@@ -53,5 +299,5 @@
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #64748b; }
+::-webkit-scrollbar-thumb { background: rgb(var(--scroll-thumb)); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--chart-text-muted)); }

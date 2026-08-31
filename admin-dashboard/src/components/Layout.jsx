@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { LayoutDashboard, Users, ArrowLeftRight, Wifi, LogOut, Menu, Router, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import ThemeToggle from './ThemeToggle'
 import { useState } from 'react'
 
 const navItems = [
@@ -45,7 +46,7 @@ export default function Layout() {
           <img src={`${import.meta.env.BASE_URL}dhtlogo.png`} alt="Dreamhatcher Logo" className="w-9 h-9 object-contain shrink-0" />
           {!collapsed && (
             <div className="min-w-0">
-              <h1 className="text-base font-bold text-white leading-tight truncate">Dreamhatcher</h1>
+              <h1 className="text-base font-bold text-slate-100 leading-tight truncate">Dreamhatcher</h1>
               <p className="text-[11px] text-brand-600 uppercase tracking-wider font-medium">Admin Panel</p>
             </div>
           )}
@@ -78,6 +79,11 @@ export default function Layout() {
 
       {/* Footer */}
       <div className="mt-auto pt-4 border-t border-slate-700 mx-4 space-y-1">
+        <ThemeToggle
+          showLabel={!collapsed}
+          iconSize={18}
+          className={`flex items-center ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'} w-full py-2.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-slate-700 transition-all`}
+        />
         <button
           onClick={toggleCollapsed}
           className={`flex items-center ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'} w-full py-2.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-slate-700 transition-all`}
@@ -126,10 +132,13 @@ export default function Layout() {
           <button onClick={() => setMobileOpen(true)} className="text-gray-400 hover:text-gray-200">
             <Menu size={22} />
           </button>
-          <h1 className="text-sm font-semibold text-white">Dreamhatcher Admin</h1>
-          <button onClick={handleLogout} className="text-gray-400 hover:text-red-400">
-            <LogOut size={18} />
-          </button>
+          <h1 className="text-sm font-semibold text-slate-100">Dreamhatcher Admin</h1>
+          <div className="flex items-center gap-2">
+            <ThemeToggle showLabel={false} iconSize={18} className="p-2 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-slate-700 transition-all" />
+            <button onClick={handleLogout} className="text-gray-400 hover:text-red-400">
+              <LogOut size={18} />
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">

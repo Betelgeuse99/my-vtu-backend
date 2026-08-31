@@ -3,12 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Dreamhatcher Admin</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
-    <script type="module" crossorigin src="./assets/index-DQdov-4L.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BHyEY-Oe.css">
+    <script>
+      // Apply the persisted theme (or the app's dark default) before first paint
+      // to avoid a flash of the wrong background.
+      (function () {
+        var KEY = 'dreamhatcher.admin.theme';
+        var t = null;
+        try { t = localStorage.getItem(KEY); } catch (e) {}
+        if (t !== 'dark' && t !== 'light') t = 'dark';
+        var d = document.documentElement;
+        if (t === 'dark') d.classList.add('dark');
+        d.style.colorScheme = t;
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-CCGybRFz.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-D39R5eMa.css">
   </head>
-  <body class="bg-slate-100 text-gray-800 antialiased">
+  <body class="antialiased">
     <div id="root"></div>
   </body>
 </html>

@@ -34,7 +34,7 @@ function EditRow({ plan, onSave, onCancel, provider }) {
     return (
       <tr className="table-row bg-brand-900/20">
         <td className="px-5 py-3">
-          <p className="font-bold text-white">{plan.volume}</p>
+          <p className="font-bold text-slate-100">{plan.volume}</p>
           <p className="text-xs font-medium text-slate-400">{plan.validity}</p>
         </td>
         <td className="px-5 py-3 text-xs font-semibold text-slate-300 font-mono">{plan.bigi_plan_id ? `#${plan.bigi_plan_id}` : '—'}</td>
@@ -65,7 +65,7 @@ function EditRow({ plan, onSave, onCancel, provider }) {
   return (
     <tr className="table-row bg-purple-900/20">
       <td className="px-5 py-3">
-        <p className="font-bold text-white">{plan.volume}</p>
+        <p className="font-bold text-slate-100">{plan.volume}</p>
         <p className="text-xs font-medium text-slate-400">{plan.validity}</p>
       </td>
       <td className="px-5 py-3 text-xs font-semibold text-slate-300 font-mono">{plan.alrahuz_plan_id ? `#${plan.alrahuz_plan_id}` : '—'}</td>
@@ -98,7 +98,7 @@ function EditRow({ plan, onSave, onCancel, provider }) {
 function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loading }) {
   const isBigi = provider === 'bigisub'
   const providerLabel = isBigi ? 'Bigisub' : 'Alrahuz'
-  const headerColor = isBigi ? 'text-brand-700' : 'text-purple-700'
+  const headerColor = isBigi ? 'text-brand-800' : 'text-purple-800'
   const colCount = 6
 
   return (
@@ -140,7 +140,7 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
                   return (
                     <tr key={key} className="table-row">
                       <td className="px-5 py-3">
-                        <p className="font-bold text-white">{plan.volume}</p>
+                        <p className="font-bold text-slate-100">{plan.volume}</p>
                         <p className="text-xs font-medium text-slate-400">{plan.validity}</p>
                       </td>
                       {isBigi ? (
@@ -156,7 +156,7 @@ function ProviderTable({ plans, provider, editingId, setEditingId, onSave, loadi
                           </td>
                         </>
                       )}
-                      <td className="px-5 py-3 font-mono text-sm font-bold text-white">₦{Number(plan.retail_price || 0).toLocaleString()}</td>
+                      <td className="px-5 py-3 font-mono text-sm font-bold text-slate-100">₦{Number(plan.retail_price || 0).toLocaleString()}</td>
                       <td className="px-5 py-3">
                         {plan.is_active ? (
                           <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400">
@@ -237,7 +237,7 @@ export default function Plans() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Data Plans</h1>
+          <h1 className="text-2xl font-bold text-slate-100">Data Plans</h1>
           <p className="text-sm text-slate-400 mt-1">Manage retail pricing and availability — each provider's plans shown separately</p>
         </div>
         <div className="flex gap-2 bg-slate-700 p-1 rounded-xl border-2 border-slate-600">
@@ -248,7 +248,7 @@ export default function Plans() {
               className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
                 network === Number(id)
                   ? 'bg-brand-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-600'
+                  : 'text-slate-300 hover:text-slate-100 hover:bg-slate-600'
               }`}
             >
               {name}
@@ -259,7 +259,7 @@ export default function Plans() {
 
       <div className="flex items-center gap-2 text-sm">
         <span className="font-semibold text-slate-300">Active route:</span>
-        <span className={`font-bold ${provider === 'alrahuz' ? 'text-purple-700' : 'text-brand-700'}`}>
+        <span className={`font-bold ${provider === 'alrahuz' ? 'text-purple-800' : 'text-brand-800'}`}>
           {provider === 'alrahuz' ? 'Alrahuzdata' : 'Bigisub'}
         </span>
         <span className="text-slate-500">(change in Provider Routing)</span>

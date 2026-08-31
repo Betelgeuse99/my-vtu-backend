@@ -38,7 +38,7 @@ export default function Login() {
           <div className="inline-flex items-center justify-center mb-4">
             <img src={`${import.meta.env.BASE_URL}dhtlogo.png`} alt="Dreamhatcher Logo" className="w-20 h-20 object-contain" />
           </div>
-          <h1 className="text-2xl font-bold text-white">Dreamhatcher Admin</h1>
+          <h1 className="text-2xl font-bold text-slate-100">Dreamhatcher Admin</h1>
           <p className="text-sm text-slate-400 mt-1">Sign in to manage your VTU platform</p>
         </div>
 

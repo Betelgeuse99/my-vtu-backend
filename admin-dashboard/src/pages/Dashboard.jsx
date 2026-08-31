@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../components/Toast'
 import CarrierBadge from '../components/CarrierBadge'
+import ThemeToggle from '../components/ThemeToggle'
 import { Wallet, Users, ArrowLeftRight, TrendingDown, Loader2, RefreshCw, Zap, Wifi, Tv, Lightbulb, GraduationCap, AlertTriangle, BarChart3, Banknote } from 'lucide-react'
 import { fmtLagos, fmtNgn } from '../lib/format'
 
@@ -29,7 +30,7 @@ function StatCard({ icon: Icon, label, value, color, sub }) {
           <Icon size={20} />
         </div>
       </div>
-      <p className="text-2xl font-extrabold text-white tabular-nums">{value}</p>
+      <p className="text-2xl font-extrabold text-slate-100 tabular-nums">{value}</p>
       <p className="text-sm font-semibold text-slate-300 mt-1">{label}</p>
       {sub && <p className="text-xs font-medium text-slate-400 mt-1">{sub}</p>}
     </div>
@@ -54,7 +55,7 @@ const CHART_COLORS = ['#0d9488', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#0
 function MiniStat({ label, value }) {
   return (
     <div className="p-3 rounded-xl bg-slate-700/50 border-2 border-slate-600">
-      <p className="text-lg font-bold text-white tabular-nums">{value}</p>
+      <p className="text-lg font-bold text-slate-100 tabular-nums">{value}</p>
       <p className="text-xs font-semibold text-slate-300 mt-0.5">{label}</p>
     </div>
   )
@@ -78,10 +79,10 @@ function DailyBarChart({ data }) {
               <title>{`${d.date}: ${d.count} purchases · ₦${Number(d.amount || 0).toLocaleString()}`}</title>
             </rect>
             {(d.count || 0) > 0 && (
-              <text x={x + w / 2} y={y - 4} textAnchor="middle" fontSize="9" fill="#e2e8f0" className="tabular-nums">{d.count}</text>
+              <text x={x + w / 2} y={y - 4} textAnchor="middle" fontSize="9" fill="var(--chart-text-strong)" className="tabular-nums">{d.count}</text>
             )}
             {i % 2 === 0 && (
-              <text x={x + w / 2} y={H + 14} textAnchor="middle" fontSize="8" fill="#94a3b8">{d.date.slice(5)}</text>
+              <text x={x + w / 2} y={H + 14} textAnchor="middle" fontSize="8" fill="var(--chart-text-muted)">{d.date.slice(5)}</text>
             )}
           </g>
         )
@@ -98,7 +99,7 @@ function DonutChart({ data }) {
   return (
     <div className="flex flex-col sm:flex-row items-center gap-6">
       <svg viewBox="0 0 140 140" className="w-32 h-32 shrink-0">
-        <circle cx="70" cy="70" r={R} fill="none" stroke="#334155" strokeWidth="15" />
+        <circle cx="70" cy="70" r={R} fill="none" stroke="var(--chart-track)" strokeWidth="15" />
         <g transform="rotate(-90 70 70)">
           {rows.map((d, i) => {
             const len = ((d.count || 0) / total) * C
@@ -112,14 +113,14 @@ function DonutChart({ data }) {
             return seg
           })}
         </g>
-        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" fontSize="18" fontWeight="bold" fill="#f1f5f9" className="tabular-nums">{total}</text>
+        <text x="70" y="70" textAnchor="middle" dominantBaseline="central" fontSize="18" fontWeight="bold" fill="var(--chart-text-strong)" className="tabular-nums">{total}</text>
       </svg>
       <div className="flex-1 w-full min-w-0 space-y-1.5">
         {rows.map((d, i) => (
           <div key={d.service_type || i} className="flex items-center gap-2 text-xs">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
             <span className="text-slate-300 capitalize flex-1 min-w-0 truncate">{d.service_type || '—'}</span>
-            <span className="text-white font-semibold tabular-nums">{d.count}</span>
+            <span className="text-slate-100 font-semibold tabular-nums">{d.count}</span>
             <span className="text-slate-400 tabular-nums w-10 text-right">{Math.round(((d.count || 0) / total) * 100)}%</span>
           </div>
         ))}
@@ -199,11 +200,12 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+          <h1 className="text-2xl font-bold text-slate-100">Dashboard</h1>
           <p className="text-sm text-slate-400 mt-1">Platform overview and provider status</p>
         </div>
         <div className="flex items-center gap-3">
           {lastUpdated && <span className="text-xs font-medium text-slate-500">Updated {fmtLagos(lastUpdated, { date: false })}</span>}
+          <ThemeToggle />
           <button onClick={fetchData} className="btn-secondary" disabled={loading}>
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
@@ -228,17 +230,17 @@ export default function Dashboard() {
       ) : stats ? (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-            <StatCard icon={Wallet} label="Bigisub Balance" value={fmtNgn(stats.balances?.bigisub)} color="bg-brand-100 text-brand-700" sub="Bigisub vendor credit" />
-            <StatCard icon={Wallet} label="Alrahuz Balance" value={fmtNgn(stats.balances?.alrahuz)} color="bg-brand-100 text-brand-700" sub="Alrahuz data vendor credit" />
-            <StatCard icon={TrendingDown} label="Total Wallet Liability" value={fmtNgn(stats.total_wallet_liability)} color="bg-brand-100 text-brand-700" sub="Sum of all user balances" />
-            <StatCard icon={Users} label="Registered Users" value={Number(stats.total_registered_users || 0).toLocaleString()} color="bg-brand-100 text-brand-700" />
-            <StatCard icon={Banknote} label="Revenue Generated" value={fmtNgn(stats.total_revenue)} color="bg-brand-100 text-brand-700" sub="Successful purchases only" />
+            <StatCard icon={Wallet} label="Bigisub Balance" value={fmtNgn(stats.balances?.bigisub)} color="bg-brand-100 text-brand-800" sub="Bigisub vendor credit" />
+            <StatCard icon={Wallet} label="Alrahuz Balance" value={fmtNgn(stats.balances?.alrahuz)} color="bg-brand-100 text-brand-800" sub="Alrahuz data vendor credit" />
+            <StatCard icon={TrendingDown} label="Total Wallet Liability" value={fmtNgn(stats.total_wallet_liability)} color="bg-brand-100 text-brand-800" sub="Sum of all user balances" />
+            <StatCard icon={Users} label="Registered Users" value={Number(stats.total_registered_users || 0).toLocaleString()} color="bg-brand-100 text-brand-800" />
+            <StatCard icon={Banknote} label="Revenue Generated" value={fmtNgn(stats.total_revenue)} color="bg-brand-100 text-brand-800" sub="Successful purchases only" />
           </div>
 
           <div className="card bg-slate-800 border-2 border-slate-700">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-bold text-white">Active Provider Routes</h2>
+                <h2 className="text-lg font-bold text-slate-100">Active Provider Routes</h2>
                 <p className="text-sm text-slate-400">Which provider handles each service</p>
               </div>
               <ArrowLeftRight size={20} className="text-slate-400" />
@@ -264,7 +266,7 @@ export default function Dashboard() {
           <div className="card bg-slate-800 border-2 border-slate-700">
             <p className="text-sm font-semibold text-slate-300">
               Total Transactions:{' '}
-              <span className="text-white font-bold">{Number(stats.total_transactions || 0).toLocaleString()}</span>
+              <span className="text-slate-100 font-bold">{Number(stats.total_transactions || 0).toLocaleString()}</span>
             </p>
           </div>
         </>
@@ -274,7 +276,7 @@ export default function Dashboard() {
       <div className="card overflow-hidden !p-0 bg-slate-800 border-2 border-slate-700">
         <div className="flex items-center justify-between px-5 py-4 border-b-2 border-slate-700">
           <div>
-            <h2 className="text-base font-bold text-white">Recent Transactions</h2>
+            <h2 className="text-base font-bold text-slate-100">Recent Transactions</h2>
             <p className="text-xs text-slate-400 mt-0.5">Latest activity across the platform</p>
           </div>
         </div>
@@ -305,7 +307,7 @@ export default function Dashboard() {
                   <tr key={tx.id} className="table-row">
                     <td className="px-4 py-3">
                       <div className="min-w-0">
-                        <p className="font-bold text-white capitalize">{tx.service_type || '—'}</p>
+                        <p className="font-bold text-slate-100 capitalize">{tx.service_type || '—'}</p>
                         <p className="text-xs text-slate-400 truncate max-w-[150px]">{tx.title}</p>
                       </div>
                     </td>
@@ -316,7 +318,7 @@ export default function Dashboard() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-300 whitespace-nowrap">{tx.recipient || '—'}</td>
-                    <td className="px-4 py-3 text-right font-mono font-bold text-white whitespace-nowrap">
+                    <td className="px-4 py-3 text-right font-mono font-bold text-slate-100 whitespace-nowrap">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
                     <td className="px-4 py-3">{statusBadge(tx.status)}</td>
@@ -335,7 +337,7 @@ export default function Dashboard() {
         <div className="card bg-slate-800 border-2 border-slate-700">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-bold text-white">Purchase Statistics</h2>
+              <h2 className="text-lg font-bold text-slate-100">Purchase Statistics</h2>
               <p className="text-sm text-slate-400">Last 14 days of platform activity</p>
             </div>
             <BarChart3 size={20} className="text-slate-400" />

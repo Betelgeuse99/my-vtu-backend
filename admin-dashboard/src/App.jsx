@@ -1,5 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { ThemeProvider } from './context/ThemeContext'
 import { ToastProvider } from './components/Toast'
 import Layout from './components/Layout'
 import Login from './pages/Login'
@@ -41,26 +42,28 @@ function PublicOnly({ children }) {
 export default function App() {
   return (
     <HashRouter>
-      <AuthProvider>
-        <ToastProvider>
-          <Routes>
-            <Route
-              path="/login"
-              element={<PublicOnly><Login /></PublicOnly>}
-            />
-            <Route
-              element={<RequireAuth><Layout /></RequireAuth>}
-            >
-              <Route index element={<Dashboard />} />
-              <Route path="providers" element={<Providers />} />
-              <Route path="users" element={<Users />} />
-              <Route path="transactions" element={<Transactions />} />
-              <Route path="plans" element={<Plans />} />
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </ToastProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <Routes>
+              <Route
+                path="/login"
+                element={<PublicOnly><Login /></PublicOnly>}
+              />
+              <Route
+                element={<RequireAuth><Layout /></RequireAuth>}
+              >
+                <Route index element={<Dashboard />} />
+                <Route path="providers" element={<Providers />} />
+                <Route path="users" element={<Users />} />
+                <Route path="transactions" element={<Transactions />} />
+                <Route path="plans" element={<Plans />} />
+              </Route>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </ToastProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </HashRouter>
   )
 }

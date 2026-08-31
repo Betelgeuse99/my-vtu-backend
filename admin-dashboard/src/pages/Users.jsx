@@ -36,11 +36,11 @@ function WalletAdjustModal({ open, user, onClose, onSuccess }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
       <div className="relative w-full max-w-md bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-6 toast-enter" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold text-white mb-1">Adjust Wallet Balance</h3>
+        <h3 className="text-lg font-semibold text-slate-100 mb-1">Adjust Wallet Balance</h3>
         <p className="text-sm text-slate-400 mb-5">
           {user.full_name || 'User'} — {user.email}
           <br />
-          Current balance: <span className="text-white font-medium">₦{Number(user.wallet_balance || 0).toLocaleString()}</span>
+          Current balance: <span className="text-slate-100 font-medium">₦{Number(user.wallet_balance || 0).toLocaleString()}</span>
         </p>
 
         {/* Action toggle */}
@@ -52,7 +52,7 @@ function WalletAdjustModal({ open, user, onClose, onSuccess }) {
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all border ${
                 action === a
                   ? a === 'credit'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
                     : 'bg-red-50 text-red-600 border-red-200'
                   : 'bg-slate-700 text-slate-400 border-slate-600 hover:text-slate-200'
               }`}
@@ -134,7 +134,7 @@ export default function Users() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Users</h1>
+          <h1 className="text-2xl font-bold text-slate-100">Users</h1>
           <p className="text-sm text-slate-400 mt-1">{pagination.total} registered users</p>
         </div>
         <div className="relative w-full sm:w-80">
@@ -173,12 +173,12 @@ export default function Users() {
                   <tr key={u.id} className="table-row">
                     <td className="px-5 py-3">
                       <div>
-                        <p className="font-bold text-white">{u.full_name || '—'}</p>
+                        <p className="font-bold text-slate-100">{u.full_name || '—'}</p>
                         <p className="text-xs text-slate-400 truncate max-w-[200px]">{u.email}</p>
                       </div>
                     </td>
                     <td className="px-5 py-3 text-slate-300">{u.phone_number || '—'}</td>
-                    <td className="px-5 py-3 text-right font-mono font-bold text-white">
+                    <td className="px-5 py-3 text-right font-mono font-bold text-slate-100">
                       ₦{Number(u.wallet_balance || 0).toLocaleString()}
                     </td>
                     <td className="px-5 py-3">

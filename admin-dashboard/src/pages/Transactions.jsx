@@ -117,7 +117,7 @@ export default function Transactions() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Transactions</h1>
+        <h1 className="text-2xl font-bold text-slate-100">Transactions</h1>
         <p className="text-sm text-slate-400 mt-1">{pagination.total} total records</p>
       </div>
 
@@ -204,7 +204,7 @@ export default function Transactions() {
                   <tr key={tx.id} className="table-row">
                     <td className="px-3 py-2.5">
                       <div className="min-w-0">
-                        <p className="font-bold text-white capitalize">{tx.service_type || '—'}</p>
+                        <p className="font-bold text-slate-100 capitalize">{tx.service_type || '—'}</p>
                         <p className="text-xs text-slate-400 truncate max-w-[130px]">{tx.title}</p>
                         <div className="mt-0.5"><CarrierBadge provider={tx.provider} /></div>
                       </div>
@@ -216,7 +216,7 @@ export default function Transactions() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-slate-300 whitespace-nowrap">{tx.recipient || '—'}</td>
-                    <td className="px-3 py-2.5 text-right font-mono font-bold text-white whitespace-nowrap">
+                    <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-100 whitespace-nowrap">
                       ₦{Number(tx.amount || 0).toLocaleString()}
                     </td>
                     <td className="px-3 py-2.5">{statusBadge(tx.status)}</td>
