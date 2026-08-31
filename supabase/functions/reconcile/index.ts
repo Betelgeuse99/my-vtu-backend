@@ -30,6 +30,12 @@ serve(async (req: Request) => {
   }
 
   const started = Date.now();
+  // Supabase kills an edge function after 150s. Each provider lookup can take
+  // up to its request timeout, so a large pending batch would blow past the
+  // cap. We cap the batch AND stop processing once a hard time budget is used,
+  // leaving the rest for the next 2-min run.
+  const BATCH_LIMIT = 5;
+  const BUDGET_MS = 90_000;
   const results = { scanned: 0, refunded: 0, markedSuccessful: 0, skipped: 0, errors: [] as string[] };
 
   try {
@@ -39,7 +45,7 @@ serve(async (req: Request) => {
       .select("*")
       .eq("status", "pending")
       .gte("created_at", since)
-      .limit(20);
+      .limit(BATCH_LIMIT);
 
     if (error) throw error;
     if (!pending || pending.length === 0) {
@@ -48,6 +54,11 @@ serve(async (req: Request) => {
     results.scanned = pending.length;
 
     for (const tx of pending) {
+      if (Date.now() - started > BUDGET_MS) {
+        console.warn("⏱️ Reconcile hit time budget — deferring remaining pending transactions");
+        results.skipped++;
+        continue;
+      }
       try {
         const r = await reconcilePending(tx);
         if (r.verdict === "failed") {

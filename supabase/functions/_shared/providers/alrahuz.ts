@@ -33,7 +33,7 @@ const apiClient = {
     requestJson(ALRAHUZ_BASE + path, {
       headers: { ...apiHeaders(), ...(opts.headers || {}) },
       query: opts.query,
-      timeoutMs: opts.timeoutMs ?? 30000,
+      timeoutMs: opts.timeoutMs ?? 15000,
     }),
   post: (path: string, body: unknown, extraHeaders?: Record<string, string>) =>
     requestJson(ALRAHUZ_BASE + path, {
@@ -96,7 +96,7 @@ async function getWebSession(): Promise<{ jar: Jar; expires: number }> {
     headers: { "Content-Type": "application/json" },
     okStatus: (s) => s >= 200 && s < 400,
     followRedirect: false,
-    timeoutMs: 30000,
+    timeoutMs: 15000,
   });
   jarFromResponse(jar, loginPage.headers);
 
@@ -120,7 +120,7 @@ async function getWebSession(): Promise<{ jar: Jar; expires: number }> {
     body: form.toString(),
     okStatus: (s) => s >= 200 && s < 400,
     followRedirect: false,
-    timeoutMs: 30000,
+    timeoutMs: 15000,
   });
   jarFromResponse(jar, loginRes.headers);
 
@@ -215,11 +215,11 @@ export async function queryRecentOrder(args: {
 
   let list: Array<Record<string, unknown>> = [];
   if (args.service === "data") {
-    const r = await apiClient.get("/api/data/", { timeoutMs: 20000 });
+    const r = await apiClient.get("/api/data/", { timeoutMs: 15000 });
     const body = r.data as any;
     list = Array.isArray(body) ? body : body?.data || body?.results || [];
   } else if (args.service === "airtime") {
-    const r = await apiClient.get("/api/topup/", { timeoutMs: 20000 });
+    const r = await apiClient.get("/api/topup/", { timeoutMs: 15000 });
     const body = r.data as any;
     list = body?.results || body?.data || (Array.isArray(body) ? body : []);
   } else {
