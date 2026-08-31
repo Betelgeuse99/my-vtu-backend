@@ -17,7 +17,7 @@ function WalletAdjustModal({ open, user, onClose, onSuccess }) {
 
     setLoading(true)
     try {
-      await api.post('/api/v2/admin/wallet/adjust', { target_user_id: user.id, amount: Number(amount), action, reason: reason.trim() })
+      await api.post('/admin/wallet/adjust', { target_user_id: user.id, amount: Number(amount), action, reason: reason.trim() })
       toast.success(`₦${Number(amount).toLocaleString()} ${action === 'credit' ? 'credited to' : 'debited from'} ${user.full_name || user.email}`)
       onSuccess()
       onClose()
@@ -118,7 +118,7 @@ export default function Users() {
     try {
       const params = new URLSearchParams({ page, limit: 20 })
       if (debouncedSearch) params.set('search', debouncedSearch)
-      const res = await api.get(`/api/v2/admin/users?${params}`)
+      const res = await api.get(`/admin/users?${params}`)
       setUsers((res.data.data || []).sort((a, b) => (b.is_admin ? 1 : 0) - (a.is_admin ? 1 : 0)))
       setPagination(res.data.pagination)
     } catch (err) {

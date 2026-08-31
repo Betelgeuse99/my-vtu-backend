@@ -42,7 +42,7 @@ export default function Transactions() {
       if (statusFilter) params.set('status', statusFilter)
       if (typeFilter) params.set('service_type', typeFilter)
       if (debouncedSearch) params.set('search', debouncedSearch)
-      const res = await api.get(`/api/v2/admin/transactions?${params}`)
+      const res = await api.get(`/admin/transactions?${params}`)
       setTxns(res.data.data || [])
       setPagination(res.data.pagination)
     } catch (err) {
@@ -79,7 +79,7 @@ export default function Transactions() {
 
     setRefundLoading(true)
     try {
-      await api.post('/api/v2/admin/transactions/refund', { transaction_id: refundTx.id, reason: refundReason.trim() })
+      await api.post('/admin/transactions/refund', { transaction_id: refundTx.id, reason: refundReason.trim() })
       toast.success(`Refund of ₦${Number(refundTx.amount).toLocaleString()} processed`)
       setRefundTx(null)
       setRefundReason('')
@@ -96,7 +96,7 @@ export default function Transactions() {
   const handleReconcile = async (tx) => {
     setReconciling(tx.id)
     try {
-      const res = await api.post('/api/v2/admin/transactions/reconcile', { transaction_id: tx.id })
+      const res = await api.post('/admin/transactions/reconcile', { transaction_id: tx.id })
       if (toast) toast.success(res.data?.message || 'Reconciled')
       fetchTxns(pagination.page)
     } catch (err) {

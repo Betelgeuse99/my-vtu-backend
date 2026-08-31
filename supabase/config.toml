@@ -1,0 +1,34 @@
+project_id = "lraryzkamshicildghdv"
+
+[api]
+enabled = true
+
+[auth]
+enabled = true
+
+# Edge Functions live in supabase/functions/.
+#
+# verify_jwt = false for vtu/wallet/auth/reconcile: this mirrors the Express
+# server, which had NO gateway-level auth. The app's catalog GETs (data/cable/
+# electricity plans) send no token; purchases authenticate per-route via the
+# bearer token (requestUserId -> 401 if missing/invalid). auth is the public
+# OTP/login/refresh flow; reconcile is protected by the x-reconcile-key header.
+#
+# verify_jwt (default true) for admin: the dashboard ALWAYS sends the admin's
+# Supabase access token (its axios interceptor adds it and auto-refreshes on
+# 401), so the gateway rejecting bad/expired tokens is pure defense-in-depth.
+
+[functions.vtu]
+verify_jwt = false
+
+[functions.wallet]
+verify_jwt = false
+
+[functions.auth]
+verify_jwt = false
+
+[functions.reconcile]
+verify_jwt = false
+
+[functions.admin]
+verify_jwt = true

@@ -22,7 +22,7 @@ api.interceptors.response.use(
       const s = readStoredSession()
       if (!s?.refresh_token) {
         clearStoredSession()
-        window.location.href = '/admin/login'
+        window.location.hash = '#/login'
         return Promise.reject(error)
       }
 
@@ -41,7 +41,7 @@ api.interceptors.response.use(
         throw new Error('Refresh failed')
       } catch {
         clearStoredSession()
-        window.location.href = '/admin/login'
+        window.location.hash = '#/login'
         return Promise.reject(error)
       }
     }

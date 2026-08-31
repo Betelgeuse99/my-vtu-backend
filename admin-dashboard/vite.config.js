@@ -3,8 +3,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  // Served from the backend at /admin — asset URLs must include the base
-  base: '/admin/',
+  // Relative asset base so the same build works on GitHub Pages
+  // (https://<user>.github.io/<repo>/) or any subpath — no /admin prefix.
+  base: './',
   server: {
     proxy: {
       '/api': 'http://localhost:3000',

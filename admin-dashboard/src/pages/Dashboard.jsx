@@ -163,10 +163,10 @@ export default function Dashboard() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     const [statsRes, providersRes, txRes, chartsRes] = await Promise.allSettled([
-      api.get('/api/v2/admin/stats'),
-      api.get('/api/v2/admin/providers'),
-      api.get('/api/v2/admin/transactions?page=1&limit=8'),
-      api.get('/api/v2/admin/stats/charts'),
+      api.get('/admin/stats'),
+      api.get('/admin/providers'),
+      api.get('/admin/transactions?page=1&limit=8'),
+      api.get('/admin/stats/charts'),
     ])
     const newErrors = {}
     if (statsRes.status === 'fulfilled') setStats(statsRes.value.data?.data ?? null)

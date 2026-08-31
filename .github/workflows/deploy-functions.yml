@@ -1,0 +1,48 @@
+name: Deploy Edge Functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+      - 'supabase/config.toml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Write secrets env file (from GitHub secrets)
+        run: |
+          cat > /tmp/functions.env <<'EOF'
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BREVO_API_KEY=${{ secrets.BREVO_API_KEY }}
+          SENDER_NAME=${{ secrets.SENDER_NAME }}
+          SENDER_EMAIL=${{ secrets.SENDER_EMAIL }}
+          BIGISUB_API_KEY=${{ secrets.BIGISUB_API_KEY }}
+          BIGISUB_BASE_URL=${{ secrets.BIGISUB_BASE_URL }}
+          BIGISUB_PIN=${{ secrets.BIGISUB_PIN }}
+          ALRAHUZ_API_TOKEN=${{ secrets.ALRAHUZ_API_TOKEN }}
+          ALRAHUZ_BASE_URL=${{ secrets.ALRAHUZ_BASE_URL }}
+          ALRAHUZ_WEB_USER=${{ secrets.ALRAHUZ_WEB_USER }}
+          ALRAHUZ_WEB_PASS=${{ secrets.ALRAHUZ_WEB_PASS }}
+          SQUAD_SECRET_KEY=${{ secrets.SQUAD_SECRET_KEY }}
+          SQUADCO_SECRET_KEY=${{ secrets.SQUADCO_SECRET_KEY }}
+          SQUAD_BASE_URL=${{ secrets.SQUAD_BASE_URL }}
+          SQUAD_BENEFICIARY_ACCOUNT=${{ secrets.SQUAD_BENEFICIARY_ACCOUNT }}
+          RECONCILE_KEY=${{ secrets.RECONCILE_KEY }}
+          EOF
+
+      - name: Deploy functions to Supabase
+        # --with-secrets pushes the env file into each function's secret store.
+        # verify_jwt flags come from supabase/config.toml (auth/vtu/wallet/reconcile = false).
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy auth vtu wallet admin reconcile --project-ref lraryzkamshicildghdv --with-secrets --env-file /tmp/functions.env

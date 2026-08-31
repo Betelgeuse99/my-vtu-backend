@@ -70,7 +70,7 @@ export default function Providers() {
   const fetchRoutes = async () => {
     setLoading(true)
     try {
-      const res = await api.get('/api/v2/admin/providers')
+      const res = await api.get('/admin/providers')
       setRoutes(res.data.data || {})
     } catch (err) {
       toast.error(err.message)
@@ -88,7 +88,7 @@ export default function Providers() {
   const handleGlobalSwitch = async (provider) => {
     setSwitching(true)
     try {
-      await api.post('/api/v2/admin/providers/route', { global_provider: provider })
+      await api.post('/admin/providers/route', { global_provider: provider })
       toast.success(`All services switched to ${provider === 'bigisub' ? 'Bigisub' : 'Alrahuzdata'}`)
       await fetchRoutes()
     } catch (err) {
@@ -102,7 +102,7 @@ export default function Providers() {
   const handleServiceSwitch = async (service, provider) => {
     setSwitching(true)
     try {
-      await api.post('/api/v2/admin/providers/route', { service, provider })
+      await api.post('/admin/providers/route', { service, provider })
       toast.success(`${serviceConfig[service].label} switched to ${provider === 'bigisub' ? 'Bigisub' : 'Alrahuzdata'}`)
       await fetchRoutes()
     } catch (err) {

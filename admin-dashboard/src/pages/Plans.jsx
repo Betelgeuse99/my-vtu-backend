@@ -20,7 +20,7 @@ function EditRow({ plan, onSave, onCancel, provider }) {
 
     setSaving(true)
     try {
-      await api.post('/api/v2/admin/plans/update-price', { plan_id: plan.row_id || plan.id, retail_price: numPrice, is_active: active })
+      await api.post('/admin/plans/update-price', { plan_id: plan.row_id || plan.id, retail_price: numPrice, is_active: active })
       toast.success('Plan updated successfully')
       onSave()
     } catch (err) {
@@ -197,7 +197,7 @@ export default function Plans() {
     setBigiLoading(true)
     setEditingId(null)
     try {
-      const res = await api.get(`/api/v2/admin/plans/bigisub?network=${network}`)
+      const res = await api.get(`/admin/plans/bigisub?network=${network}`)
       setBigiPlans(res.data.data || [])
     } catch (err) {
       toast.error(err.message)
@@ -210,7 +210,7 @@ export default function Plans() {
     setAlrLoading(true)
     setEditingId(null)
     try {
-      const res = await api.get(`/api/v2/admin/plans/alrahuz?network=${network}`)
+      const res = await api.get(`/admin/plans/alrahuz?network=${network}`)
       setAlrPlans(res.data.data || [])
     } catch (err) {
       toast.error(err.message)
@@ -221,7 +221,7 @@ export default function Plans() {
 
   const fetchActiveProvider = useCallback(async () => {
     try {
-      const res = await api.get('/api/v2/admin/providers')
+      const res = await api.get('/admin/providers')
       const routes = res.data.data || {}
       setProvider(routes.data || 'bigisub')
     } catch {}

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ToastProvider } from './components/Toast'
 import Layout from './components/Layout'
@@ -40,7 +40,7 @@ function PublicOnly({ children }) {
 
 export default function App() {
   return (
-    <BrowserRouter basename="/admin">
+    <HashRouter>
       <AuthProvider>
         <ToastProvider>
           <Routes>
@@ -61,6 +61,6 @@ export default function App() {
           </Routes>
         </ToastProvider>
       </AuthProvider>
-    </BrowserRouter>
+    </HashRouter>
   )
 }
