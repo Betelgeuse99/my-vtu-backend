@@ -18,6 +18,14 @@ jobs:
         with:
           version: latest
 
+      - name: Verify SUPABASE_ACCESS_TOKEN secret
+        if: ${{ secrets.SUPABASE_ACCESS_TOKEN == '' }}
+        run: |
+          echo "::error::SUPABASE_ACCESS_TOKEN secret is missing or empty in THIS repo (my-vtu-backend)."
+          echo "Add it: Settings -> Secrets and variables -> Actions -> New repository secret,"
+          echo "then re-run this workflow."
+          exit 1
+
       - name: Write secrets env file (from GitHub secrets)
         run: |
           cat > /tmp/functions.env <<'EOF'
