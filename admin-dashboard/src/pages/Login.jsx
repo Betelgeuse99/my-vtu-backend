@@ -51,7 +51,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="admin@dreamhatchertech.com"
+                placeholder="email"
                 className="input pl-10"
                 autoFocus
               />
