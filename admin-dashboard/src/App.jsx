@@ -9,6 +9,7 @@ import Providers from './pages/Providers'
 import Users from './pages/Users'
 import Transactions from './pages/Transactions'
 import Plans from './pages/Plans'
+import CacAdmin from './pages/CacAdmin'
 import { Loader2 } from 'lucide-react'
 
 function RequireAuth({ children }) {
@@ -58,6 +59,7 @@ export default function App() {
                 <Route path="users" element={<Users />} />
                 <Route path="transactions" element={<Transactions />} />
                 <Route path="plans" element={<Plans />} />
+                <Route path="cac" element={<CacAdmin />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
