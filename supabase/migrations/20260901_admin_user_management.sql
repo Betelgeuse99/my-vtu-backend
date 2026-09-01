@@ -85,14 +85,18 @@ BEGIN
 
   -- CRITICAL: also create the email identity in auth.identities.
   -- signInWithPassword requires this row or login fails with "Invalid email or password".
-  INSERT INTO auth.identities (
-    id, provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at
-  ) VALUES (
-    v_user_id, v_email, v_user_id,
-    jsonb_build_object('sub', v_user_id, 'email', v_email),
-    'email', now(), now(), now()
-  )
-  ON CONFLICT (provider, id) DO NOTHING;
+  IF NOT EXISTS (
+    SELECT 1 FROM auth.identities
+    WHERE provider = 'email' AND identity_data->>'sub' = v_user_id::text
+  ) THEN
+    INSERT INTO auth.identities (
+      id, provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at
+    ) VALUES (
+      v_user_id, v_email, v_user_id,
+      jsonb_build_object('sub', v_user_id, 'email', v_email),
+      'email', now(), now(), now()
+    );
+  END IF;
 
   -- Create profile with admin flags (ON CONFLICT in case a trigger
   -- on auth.users already auto-created this profile row)
