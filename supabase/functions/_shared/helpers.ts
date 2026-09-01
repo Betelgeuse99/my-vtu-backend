@@ -127,8 +127,12 @@ export async function logTx(args: {
   status?: string;
   reference?: string | null;
   provider?: string | null;
+  /** Full provider response, persisted in the api_response JSONB column so the
+   * app/web can re-render a detailed receipt (electricity token, cable plan,
+   * units, raw response, etc.) from transaction history. */
+  api_response?: unknown;
 }): Promise<void> {
-  const { user_id, title, service_type, amount, recipient, status, reference, provider } = args;
+  const { user_id, title, service_type, amount, recipient, status, reference, provider, api_response } = args;
   try {
     const supabase = getSupabase();
     const ref = reference || null;
@@ -143,6 +147,7 @@ export async function logTx(args: {
         const patch: Record<string, unknown> = { status: status || "successful" };
         if (provider) patch.provider = provider;
         if (title) patch.title = String(title);
+        if (api_response !== undefined) patch.api_response = api_response;
         await supabase.from("transactions").update(patch).eq("id", existing.id);
         return;
       }
@@ -156,6 +161,7 @@ export async function logTx(args: {
       status: status || "successful",
       reference: ref,
       provider: provider || null,
+      api_response: api_response !== undefined ? api_response : null,
     });
   } catch (err: any) {
     if (reference && err?.code === "23505") {

@@ -285,6 +285,7 @@ async function purchaseAirtime(req: Request, body: any) {
       amount: price,
       recipient: String(phone_number).trim(),
       status: "successful",
+      api_response: response,
       reference: txRef,
       provider: canonicalNetworkName(network),
     });
@@ -428,6 +429,7 @@ async function purchaseData(req: Request, body: any) {
       amount: price,
       recipient: String(phone_number).trim(),
       status: "successful",
+      api_response: response,
       reference: txRef,
       provider: canonicalNetworkName(network),
     });
@@ -632,6 +634,7 @@ async function purchaseCable(req: Request, body: any) {
       amount: price,
       recipient: String(card_no).trim(),
       status: "successful",
+      api_response: response,
       reference: txRef,
       provider: cableDisplayName(cable_type || provider),
     });
@@ -760,6 +763,7 @@ async function purchaseRechargePin(req: Request, body: any) {
       amount: price,
       recipient: String(network || "").trim(),
       status: "successful",
+      api_response: response,
       reference: txRef,
       provider: canonicalNetworkName(network),
     });
@@ -918,6 +922,7 @@ async function payElectricity(req: Request, body: any) {
       amount: price,
       recipient: String(meter_no).trim(),
       status: "successful",
+      api_response: response,
       reference: txRef,
       provider: String(company).trim().toUpperCase(),
     });
@@ -1034,6 +1039,7 @@ async function purchaseResultChecker(req: Request, body: any) {
       amount: price,
       recipient: String(exam).trim(),
       status: "successful",
+      api_response: response,
       reference: txRef,
       provider: null,
     });
