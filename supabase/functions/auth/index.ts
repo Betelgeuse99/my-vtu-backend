@@ -1,10 +1,11 @@
 // auth edge function — port of the Express /auth/* routes.
 // Unauthenticated by design: deploy with verify_jwt = false (see config.toml).
 // Endpoints (path after /functions/v1/auth):
-//   POST /send-otp    -> generate OTP, email it via Brevo, store in temp_otps
-//   POST /verify-otp  -> validate OTP, create/update Supabase auth user + profile + wallet
-//   POST /login       -> signInWithPassword, return session + profile + wallet
-//   POST /refresh     -> exchange refresh_token for a fresh session
+//   POST /send-otp        -> generate OTP, email it via Brevo, store in temp_otps
+//   POST /verify-otp      -> validate OTP, create/update Supabase auth user + profile + wallet
+//   POST /login           -> signInWithPassword, return session + profile + wallet
+//   POST /refresh         -> exchange refresh_token for a fresh session
+//   POST /reset-password  -> validate OTP, update the auth user's password
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { handleCors, json, routePath } from "../_shared/cors.ts";
@@ -32,6 +33,8 @@ serve(async (req: Request) => {
         return await login(body);
       case "/refresh":
         return await refresh(body);
+      case "/reset-password":
+        return await resetPassword(body);
       default:
         return json({ success: false, message: "Not found" }, 404);
     }
@@ -225,5 +228,57 @@ async function refresh(body: any) {
   } catch (err: any) {
     console.error("❌ Token refresh error:", err.message);
     return json({ success: false, message: "Refresh failed" }, 500);
+  }
+}
+
+/**
+ * POST /reset-password — validates the email+OTP pair from temp_otps (the
+ * Forgot Password flow reuses the same OTP emailer), then sets the new
+ * password on the Supabase auth user. Used by BOTH the Android app and the
+ * website; previously this route only existed on the (now decommissioned)
+ * Render Express server.
+ */
+async function resetPassword(body: any) {
+  const email = String(body.email || "").toLowerCase().trim();
+  const otp = String(body.otp || "").trim();
+  const password = String(body.password || "").trim();
+
+  if (!email || !otp) {
+    return json({ success: false, message: "Email and OTP required" }, 400);
+  }
+  if (password.length < 6) {
+    return json({ success: false, message: "Password must be at least 6 characters" }, 400);
+  }
+
+  try {
+    const { data: otpData } = await getSupabase()
+      .from("temp_otps")
+      .select("*")
+      .eq("email", email)
+      .eq("otp", otp)
+      .maybeSingle();
+
+    if (!otpData) {
+      return json({ success: false, message: "Invalid or expired OTP." }, 400);
+    }
+
+    const { data: userList } = await getSupabase().auth.admin.listUsers();
+    const existing = userList?.users?.find((u: any) => u.email === email);
+    if (!existing) {
+      return json({ success: false, message: "No account found for this email" }, 400);
+    }
+
+    const { error: updateError } = await getSupabase().auth.admin.updateUserById(existing.id, {
+      password,
+      user_metadata: { ...(existing.user_metadata || {}), full_name: existing.user_metadata?.full_name || "User" },
+    });
+    if (updateError) throw updateError;
+
+    await getSupabase().from("temp_otps").delete().eq("email", email);
+
+    return json({ success: true, message: "Password reset successful" });
+  } catch (err: any) {
+    console.error("❌ RESET_PASSWORD_ERROR:", err.message);
+    return json({ success: false, message: err.message || "Password reset failed" }, 500);
   }
 }
