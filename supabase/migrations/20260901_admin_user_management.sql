@@ -233,13 +233,18 @@ BEGIN
 END $$;
 
 -- =============================================================
--- USAGE EXAMPLES (uncomment to run):
+-- USAGE — PREFERRED METHOD (Node script, uses official auth API):
+--   node scripts/admin-users.js create "email@example.com" "password" "Full Name"
+--   node scripts/admin-users.js remove "email@example.com"
+--   node scripts/admin-users.js list
+--
+-- SQL functions below remain as a fallback for promoting an
+-- ALREADY-EXISTING auth user to admin, but creating NEW auth users
+-- directly in auth.users is unreliable across GoTrue versions.
+-- Use the script for new admins.
 --
 -- Create a new admin:
 --   SELECT create_admin_user('newadmin@example.com', 'securepass123', 'New Admin');
---
--- Promote existing user to admin:
---   SELECT create_admin_user('existinguser@example.com', 'ignored', 'Their Name');
 --
 -- Remove admin (demote to user):
 --   SELECT remove_admin_user('newadmin@example.com');
