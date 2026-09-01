@@ -62,25 +62,29 @@ BEGIN
   INSERT INTO auth.users (
     id,
     instance_id,
+    aud,
+    role,
     email,
     encrypted_password,
     email_confirmed_at,
     created_at,
     updated_at,
+    raw_app_meta_data,
     raw_user_meta_data,
-    is_super_admin,
-    role
+    is_super_admin
   ) VALUES (
     v_user_id,
     '00000000-0000-0000-0000-000000000000',
+    'authenticated',
+    'authenticated',
     v_email,
     crypt(p_password, extensions.gen_salt('bf')),
     now(),
     now(),
     now(),
+    jsonb_build_object('provider', 'email', 'providers', array['email']),
     jsonb_build_object('full_name', p_full_name),
-    false,
-    'authenticated'
+    false
   );
 
   -- CRITICAL: also create the email identity in auth.identities.
