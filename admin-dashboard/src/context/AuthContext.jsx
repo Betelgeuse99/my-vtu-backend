@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 
 const AuthContext = createContext(null)
@@ -130,6 +130,27 @@ export function AuthProvider({ children }) {
     clearStoredSession()
     setSession(null)
   }
+
+  // 10-minute inactivity auto-logout (matches the Android app and the customer
+  // web). Any activity resets the timer; on timeout the session is cleared and
+  // the router bounces to login.
+  const signOutRef = useRef(signOut)
+  signOutRef.current = signOut
+  useEffect(() => {
+    if (!session) return
+    let timer = null
+    const reset = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => signOutRef.current(), 10 * 60 * 1000)
+    }
+    const events = ['pointerdown', 'keydown', 'scroll', 'touchstart', 'mousemove']
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
+    reset()
+    return () => {
+      if (timer) clearTimeout(timer)
+      events.forEach((e) => window.removeEventListener(e, reset))
+    }
+  }, [session?.access_token])
 
   return (
     <AuthContext.Provider value={{ user, session, loading, signIn, signOut }}>
