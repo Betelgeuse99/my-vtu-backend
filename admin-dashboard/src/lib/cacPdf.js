@@ -358,7 +358,9 @@ export function buildCacPdf(sub, makeDoc) {
   if (isBusinessName) {
     sectionTitle('Business Type')
     wideRow('Type of Business', sub.business_type, { bold: true })
-    if (has(sub.prop_commencement)) wideRow('Proposed Date of Commencement', sub.prop_commencement)
+    const bnAdd = sub.additional || {}
+    const commence = has(bnAdd.propCommencement) ? bnAdd.propCommencement : sub.prop_commencement
+    if (has(commence)) wideRow('Proposed Date of Commencement', commence)
 
     const proprietor = sub.proprietor || {}
     if (formatPersonName(proprietor) || Object.keys(proprietor).some((k) => has(proprietor[k]))) {

@@ -198,7 +198,7 @@ function SubmissionCard({ sub, onPreview }) {
           {Array.isArray(sub.additional?.witnesses) && sub.additional.witnesses.filter(w => w?.surname || w?.firstName).length > 0 && <D k="Witnesses" v={sub.additional.witnesses.filter(w => w?.surname || w?.firstName).map((w, i) => `${i + 1}. ${w.surname} ${w.firstName}`).join(', ')} />}
           <D k="Registered Address" v={sub.registered_address} />
           {sub.head_office_address !== sub.registered_address && <D k="Head Office" v={sub.head_office_address} />}
-          {sub.business_type && <D k="Business Type" v={`${sub.business_type}${sub.prop_commencement ? ` — commences ${sub.prop_commencement}` : ''}`} />}
+          {sub.business_type && <D k="Business Type" v={`${sub.business_type}${(sub.additional?.propCommencement || sub.prop_commencement) ? ` — commences ${sub.additional?.propCommencement || sub.prop_commencement}` : ''}`} />}
           {sub.proprietor?.surname && <D k="Proprietor" v={`${sub.proprietor.surname} ${sub.proprietor.firstName} — NIN: ${sub.proprietor.nin}`} />}
           {sub.directors?.length > 0 && <D k="Directors" v={sub.directors.map((d, i) => `${i + 1}. ${d.surname} ${d.firstName} (${d.nin})`).join(', ')} />}
           {sub.shareholders?.length > 0 && <D k="Shareholders / Members" v={sub.shareholders.map((s, i) => `${i + 1}. ${s.surname} ${s.firstName}${s.allotted ? ` (${s.allotted} shares)` : ''}`).join(', ')} />}
