@@ -182,7 +182,12 @@ function SubmissionCard({ sub, onPreview }) {
           <button onClick={download} className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-200" title="Download PDF">
             <Download size={16} />
           </button>
-          <button onClick={(e) => { e.stopPropagation(); if (confirm(`Delete ${sub.proposed_name || 'this submission'}?`)) deleteSubmission(sub.id).then(() => window.location.reload()) }} className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200" title="Delete">
+          <button onClick={(e) => {
+            e.stopPropagation()
+            const name = sub.proposed_name || 'this submission'
+            const typed = window.prompt(`This permanently deletes "${name}" from the dashboard AND the Supabase table.\n\nType DELETE to confirm.`)
+            if (typed === 'DELETE') deleteSubmission(sub.id).then(() => window.location.reload())
+          }} className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200" title="Delete">
             <Trash2 size={16} />
           </button>
           {open ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
