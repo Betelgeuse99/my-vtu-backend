@@ -75,6 +75,10 @@ serve(async (req: Request) => {
         return await walletAdjust(body, admin);
       case "GET /transactions":
         return await transactions(req);
+      case "GET /cac":
+        return await cacSubmissions(req);
+      case "DELETE /cac":
+        return await cacDelete(body);
       case "POST /transactions/reconcile":
         return await reconcile(body);
       case "POST /transactions/refund":
@@ -687,5 +691,49 @@ async function plansAlrahuz(req: Request) {
   } catch (err: any) {
     console.error("❌ Alrahuz plans fetch error:", err.message);
     return json({ success: false, message: err.message, data: [] }, 500);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CAC business-registration submissions (admin)
+// cac_submissions has RLS that hides other users' rows from a normal token.
+// These run with the service-role client, so the admin sees EVERY submission
+// (web users AND the Android app) and can delete them. The dashboard calls
+// these through the admin edge function instead of raw PostgREST.
+// ---------------------------------------------------------------------------
+async function cacSubmissions(req: Request) {
+  try {
+    const q = queryParams(req);
+    const limit = Math.min(1000, Math.max(1, parseInt(q.get("limit") || "200") || 200));
+    const { data, error } = await getSupabase()
+      .from("cac_submissions")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return json({ success: true, data: data || [] });
+  } catch (err: any) {
+    console.error("❌ Admin CAC list error:", err.message);
+    return json({ success: false, message: err.message, data: [] }, 500);
+  }
+}
+
+async function cacDelete(body: any) {
+  try {
+    const id = Number(body?.id);
+    if (!id || Number.isNaN(id)) {
+      return json({ success: false, message: "A numeric submission id is required" }, 400);
+    }
+    const { error, count } = await getSupabase()
+      .from("cac_submissions")
+      .delete({ count: "exact" })
+      .eq("id", id);
+    if (error) throw error;
+    if (!count) return json({ success: false, message: "Submission not found" }, 404);
+    return json({ success: true, message: "Submission deleted" });
+  } catch (err: any) {
+    console.error("❌ Admin CAC delete error:", err.message);
+    return json({ success: false, message: err.message }, 500);
   }
 }

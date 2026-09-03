@@ -13,34 +13,36 @@ function authHeaders() {
 
 // Admins must see EVERY submission (web signed-in users AND the Android app).
 // cac_submissions has row-level security that hides other people's rows from a
-// normal token, so we read/delete through the security-definer RPCs created in
-// supabase/migrations/20260903000000_cac_admin_access.sql — those verify the
-// caller is an admin and bypass RLS. Rows only drop to the localStorage
-// fallback when the API is unreachable (offline/dev).
+// normal token, so the dashboard reads/delete through the deployed admin edge
+// function (functions/v1/admin/cac), which uses the service-role client and
+// gates on the admin JWT. Rows only drop to the localStorage fallback when the
+// API is unreachable (offline/dev).
+const CAC_API = `${SUPABASE_URL}/functions/v1/admin/cac`
+
 async function fetchSubmissions() {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_cac_submissions`, {
-      method: 'POST',
-      headers: authHeaders(),
-      body: '{}',
-    })
+    const res = await fetch(CAC_API, { headers: authHeaders() })
     if (res.ok) {
-      const rows = await res.json()
-      if (Array.isArray(rows)) return { rows, error: null }
-    } else {
-      const body = await res.json().catch(() => null)
-      return { rows: [], error: `Admin API returned ${res.status}${body?.message ? ` — ${body.message}` : ''}.` }
+      const body = await res.json()
+      if (body?.success && Array.isArray(body.data)) return { rows: body.data, error: null }
+      return { rows: [], error: body?.message || 'Malformed response from admin API.' }
     }
-  } catch {}
-  return { rows: JSON.parse(localStorage.getItem('cac_submissions') || '[]'), error: 'Could not reach the server — showing locally cached submissions only.' }
+    const body = await res.json().catch(() => null)
+    return { rows: [], error: `Admin API returned ${res.status}${body?.message ? ` — ${body.message}` : ''}.` }
+  } catch (e) {
+    return {
+      rows: JSON.parse(localStorage.getItem('cac_submissions') || '[]'),
+      error: 'Could not reach the server — showing locally cached submissions only.',
+    }
+  }
 }
 
 async function deleteSubmission(id) {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_cac_delete`, {
-      method: 'POST',
+    const res = await fetch(CAC_API, {
+      method: 'DELETE',
       headers: authHeaders(),
-      body: JSON.stringify({ p_id: Number(id) }),
+      body: JSON.stringify({ id: Number(id) }),
     })
     if (!res.ok) {
       const body = await res.json().catch(() => null)
@@ -190,6 +192,10 @@ function SubmissionCard({ sub, onPreview }) {
         <div className="px-4 pb-4 border-t border-slate-100 dark:border-slate-700 pt-3 space-y-2 text-xs">
           <D k="Type" v={prettyType} />
           <D k="Nature of Business" v={sub.nature_of_business} />
+          <D k="Principal Activity" v={sub.additional?.principalActivity} />
+          <D k="Specific Activity" v={sub.additional?.specificActivity} />
+          {Array.isArray(sub.additional?.objects) && <D k="Objects of Memorandum" v={sub.additional.objects.filter(Boolean).map((o, i) => `${i + 1}. ${o}`).join('\n')} />}
+          {Array.isArray(sub.additional?.witnesses) && sub.additional.witnesses.filter(w => w?.surname || w?.firstName).length > 0 && <D k="Witnesses" v={sub.additional.witnesses.filter(w => w?.surname || w?.firstName).map((w, i) => `${i + 1}. ${w.surname} ${w.firstName}`).join(', ')} />}
           <D k="Registered Address" v={sub.registered_address} />
           {sub.head_office_address !== sub.registered_address && <D k="Head Office" v={sub.head_office_address} />}
           {sub.business_type && <D k="Business Type" v={`${sub.business_type}${sub.prop_commencement ? ` — commences ${sub.prop_commencement}` : ''}`} />}
@@ -243,7 +249,7 @@ export default function CacAdmin() {
         <div className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-xs text-amber-700 dark:text-amber-300">
           <p className="font-semibold mb-1">Could not load all submissions</p>
           <p>{error}</p>
-          <p className="mt-1 opacity-80">The admin list reads through the <code className="font-mono">admin_cac_submissions</code> RPC. Make sure the migration <code className="font-mono">supabase/migrations/20260903000000_cac_admin_access.sql</code> has been applied (run it in the Supabase SQL editor or <code className="font-mono">supabase db push</code>).</p>
+          <p className="mt-1 opacity-80">The admin list reads through the deployed <code className="font-mono">admin</code> edge function (<code className="font-mono">GET /cac</code>). Make sure that function has been redeployed from <code className="font-mono">supabase/functions/admin</code> (the <code className="font-mono">deploy-functions</code> GitHub Action does this automatically on push).</p>
         </div>
       )}
       {loading ? (

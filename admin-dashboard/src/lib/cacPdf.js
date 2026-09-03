@@ -74,6 +74,15 @@ function money(v) {
   return has(v) ? `N${clean(v)}` : ''
 }
 
+function hasAny(obj) {
+  return obj && typeof obj === 'object' && Object.values(obj).some((x) => has(x))
+}
+
+function fmtAddr(a) {
+  if (!a || typeof a !== 'object') return has(a) ? clean(a) : ''
+  return [a.country, a.state, a.lga, a.city, a.postCode, a.house, a.street].map(clean).filter(Boolean).join(', ')
+}
+
 // Main builder ----------------------------------------------------------------
 //   makeDoc: () => new jsPDF(...)  (portrait A4)
 //   sub: the cac_submissions row (registration_type, proposed_name, email, …,
@@ -241,19 +250,17 @@ export function buildCacPdf(sub, makeDoc) {
 
     const addrA = has(p.address) ? clean(p.address) : ''
     const addrB = has(p.resAddress) ? clean(p.resAddress) : ''
-    if (addrA && addrB && addrA !== addrB) {
-      wideRow('Office Address', addrA)
-      wideRow('Residential Address', addrB)
-    } else if (addrA) {
-      wideRow('Address', addrA)
-    } else if (addrB) {
-      wideRow('Residential Address', addrB)
-    }
-
-    if (has(p.countryRes) && (addrA || addrB)) {
-      // countryRes shown with the address above; nothing more to add here
-    } else if (has(p.countryRes)) {
-      wideRow('Country of Residence', p.countryRes)
+    const svcObj = (p.serviceAddress && typeof p.serviceAddress === 'object' && hasAny(p.serviceAddress)) ? fmtAddr(p.serviceAddress) : ''
+    const resObj = (p.residentialAddress && typeof p.residentialAddress === 'object' && hasAny(p.residentialAddress)) ? fmtAddr(p.residentialAddress) : ''
+    const svc = svcObj || addrA
+    const res = resObj || addrB
+    if (svc && res && svc !== res) {
+      wideRow('Service Address', svc)
+      wideRow('Residential Address', res)
+    } else if (svc) {
+      wideRow('Address', svc)
+    } else if (res) {
+      wideRow('Residential Address', res)
     }
   }
 
@@ -395,6 +402,19 @@ export function buildCacPdf(sub, makeDoc) {
       if (has(shares.capitalWords)) wideRow('Issued Share Capital in Words', shares.capitalWords)
       row(f('Class of Shares', shares.shareClass), f('Nominal Value per Share', money(shares.nominalValue)))
       if (has(shares.sharesDivided)) wideRow('Divided Into', `${clean(shares.sharesDivided)} shares`)
+
+      const shareRows = Array.isArray(shares.rows) ? shares.rows.filter((r) => r && hasAny(r)) : []
+      if (shareRows.length > 1) {
+        shareRows.forEach((r, i) => {
+          const cls = has(r.shareClass) ? clean(r.shareClass) : ''
+          const rd = has(r.divided) ? clean(r.divided) : ''
+          sectionTitle(`Share Class ${i + 1}`)
+          if (cls) wideRow('Class of Shares', cls)
+          row(f('Issued Share Capital', money(r.issued)), f('Nominal Value', money(r.nominal)))
+          if (has(r.words)) wideRow('Issued Capital in Words', r.words)
+          if (rd) wideRow('Divided Into', `${rd} shares`)
+        })
+      }
     }
 
     const pscs = Array.isArray(sub.pscs) ? sub.pscs : []
@@ -435,6 +455,30 @@ export function buildCacPdf(sub, makeDoc) {
     if (withTrustees) {
       sectionTitle('Details of Trustees')
       trustees.forEach((t, i) => person('Trustee', i, t))
+    }
+  }
+
+  // ==========================================================================
+  // iCRP EXTRAS (objects / witnesses / company activity) when present
+  // ==========================================================================
+  const addExtra = sub.additional || {}
+  if (has(addExtra.principalActivity) || has(addExtra.specificActivity)) {
+    sectionTitle('Company Activity')
+    if (has(addExtra.principalActivity)) wideRow('Principal Activity', addExtra.principalActivity)
+    if (has(addExtra.specificActivity)) wideRow('Specific Activity', addExtra.specificActivity)
+  }
+  if (Array.isArray(addExtra.objects)) {
+    const objects = addExtra.objects.map(clean).filter(Boolean)
+    if (objects.length) {
+      sectionTitle('Objects of Memorandum')
+      objects.forEach((o, i) => wideRow(`Object ${i + 1}`, o))
+    }
+  }
+  if (Array.isArray(addExtra.witnesses)) {
+    const witnesses = addExtra.witnesses.filter((x) => x && (formatPersonName(x) || Object.keys(x).some((k) => has(x[k]))))
+    if (witnesses.length) {
+      sectionTitle('Witnesses')
+      witnesses.forEach((wt, i) => person('Witness', i + 1, wt))
     }
   }
 
