@@ -39,8 +39,11 @@ async function fetchSubmissions() {
 
 async function deleteSubmission(id) {
   try {
-    const res = await fetch(CAC_API, {
-      method: 'DELETE',
+    // POST (not DELETE): edge functions only parse a JSON body for POST/PUT/
+    // PATCH, so a DELETE body with the id was silently dropped -> "numeric
+    // submission id is required". The id now travels in a POST body.
+    const res = await fetch(`${CAC_API}/delete`, {
+      method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ id: Number(id) }),
     })

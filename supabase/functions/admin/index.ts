@@ -77,7 +77,7 @@ serve(async (req: Request) => {
         return await transactions(req);
       case "GET /cac":
         return await cacSubmissions(req);
-      case "DELETE /cac":
+      case "POST /cac/delete":
         return await cacDelete(body);
       case "POST /transactions/reconcile":
         return await reconcile(body);
