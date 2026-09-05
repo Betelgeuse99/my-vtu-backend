@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, Users, ArrowLeftRight, Wifi, LogOut, Menu, Router, ChevronsLeft, ChevronsRight, Building2 } from 'lucide-react'
+import { LayoutDashboard, Users, ArrowLeftRight, Wifi, LogOut, Menu, Router, ChevronsLeft, ChevronsRight, Building2, Landmark } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
 import { useState } from 'react'
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/providers',   icon: Router,          label: 'Providers' },
   { to: '/users',       icon: Users,            label: 'Users' },
   { to: '/transactions', icon: ArrowLeftRight,  label: 'Transactions' },
+  { to: '/funding',     icon: Landmark,         label: 'Funding' },
   { to: '/plans',       icon: Wifi,             label: 'Plans' },
   { to: '/cac',         icon: Building2,        label: 'CAC' },
 ]

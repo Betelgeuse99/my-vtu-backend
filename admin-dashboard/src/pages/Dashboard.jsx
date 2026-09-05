@@ -219,6 +219,20 @@ export default function Dashboard() {
         </div>
       )}
 
+      {stats && Number(stats.funding_pending?.count || 0) > 0 && (
+        <a
+          href="#/funding"
+          className="flex items-start gap-3 px-4 py-3 rounded-lg border-2 border-amber-700 bg-amber-900/20 hover:bg-amber-900/30 transition-colors"
+        >
+          <AlertTriangle size={18} className="text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-200">
+            <span className="font-bold">{Number(stats.funding_pending.count).toLocaleString()} unconfirmed wallet funding</span> worth{' '}
+            <span className="font-bold">{fmtNgn(stats.funding_pending.amount)}</span> is waiting for review.
+            <span className="ml-1 underline decoration-amber-400/50">Open Funding</span> to verify against Squad or close abandoned payments.
+          </div>
+        </a>
+      )}
+
       {!stats && loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
           {[0, 1, 2, 3, 4].map(i => (

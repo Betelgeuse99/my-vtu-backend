@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 import Providers from './pages/Providers'
 import Users from './pages/Users'
 import Transactions from './pages/Transactions'
+import Funding from './pages/Funding'
 import Plans from './pages/Plans'
 import CacAdmin from './pages/CacAdmin'
 import { Loader2 } from 'lucide-react'
@@ -58,6 +59,7 @@ export default function App() {
                 <Route path="providers" element={<Providers />} />
                 <Route path="users" element={<Users />} />
                 <Route path="transactions" element={<Transactions />} />
+                <Route path="funding" element={<Funding />} />
                 <Route path="plans" element={<Plans />} />
                 <Route path="cac" element={<CacAdmin />} />
               </Route>

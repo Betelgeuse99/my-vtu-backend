@@ -198,7 +198,8 @@ export default function Plans() {
     setEditingId(null)
     try {
       const res = await api.get(`/admin/plans/bigisub?network=${network}`)
-      setBigiPlans(res.data.data || [])
+      setBigiPlans((res.data.data || [])
+        .sort((a, b) => (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0) || Number(a.retail_price || 0) - Number(b.retail_price || 0)))
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -211,7 +212,8 @@ export default function Plans() {
     setEditingId(null)
     try {
       const res = await api.get(`/admin/plans/alrahuz?network=${network}`)
-      setAlrPlans(res.data.data || [])
+      setAlrPlans((res.data.data || [])
+        .sort((a, b) => (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0) || Number(a.retail_price || 0) - Number(b.retail_price || 0)))
     } catch (err) {
       toast.error(err.message)
     } finally {

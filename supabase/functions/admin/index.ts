@@ -18,6 +18,11 @@ import {
   requireAdmin,
   AdminError,
 } from "../_shared/helpers.ts";
+import {
+  verifyPaymentWithSquad,
+  claimAndCreditPayment,
+  squadMethodLabel,
+} from "../_shared/squad.ts";
 import { bigiClient } from "../_shared/providers/bigisub.ts";
 import * as alrahuz from "../_shared/providers/alrahuz.ts";
 import { reconcilePending, refundPendingTx } from "../_shared/reconcile.ts";
@@ -71,10 +76,18 @@ serve(async (req: Request) => {
         return await providersRoute(body, admin);
       case "GET /users":
         return await users(req);
+      case "GET /users/ledger":
+        return await userLedger(req);
       case "POST /wallet/adjust":
         return await walletAdjust(body, admin);
       case "GET /transactions":
         return await transactions(req);
+      case "GET /payments":
+        return await payments(req);
+      case "POST /payments/verify":
+        return await paymentsVerify(body, admin);
+      case "POST /payments/cancel":
+        return await paymentsCancel(body, admin);
       case "GET /cac":
         return await cacSubmissions(req);
       case "POST /cac/delete":
@@ -204,6 +217,23 @@ async function stats() {
     const totalLiability = (walletRes.data || []).reduce((sum: number, w: any) => sum + Number(w.balance || 0), 0);
     const totalRevenue = (revenueRes.data || []).reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0);
 
+    // Unconfirmed wallet funding (payments stuck on "pending" because the Squad
+    // webhook was lost / never fired). Surfaced so the dashboard can flag
+    // funding that may need an admin verify-or-close decision.
+    let pendingFunding = { count: 0, amount: 0 };
+    try {
+      const { data: pendingPays } = await getSupabase()
+        .from("payments")
+        .select("amount,status")
+        .eq("status", "pending");
+      pendingFunding = {
+        count: (pendingPays || []).length,
+        amount: (pendingPays || []).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0),
+      };
+    } catch (e: any) {
+      console.warn("⚠️ Could not read payments (table may not exist):", e.message);
+    }
+
     return json({
       success: true,
       data: {
@@ -213,6 +243,10 @@ async function stats() {
         total_transactions: totalTransactions,
         total_wallet_liability: Number(totalLiability.toFixed(2)),
         total_revenue: Number(totalRevenue.toFixed(2)),
+        funding_pending: {
+          count: pendingFunding.count,
+          amount: Number(pendingFunding.amount.toFixed(2)),
+        },
       },
     });
   } catch (err: any) {
@@ -391,6 +425,86 @@ async function users(req: Request) {
     });
   } catch (err: any) {
     console.error("❌ Admin users error:", err.message);
+    return json({ success: false, message: err.message }, 500);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Wallet audit (wallet_transactions) for a single user. Supports support &
+// dispute work: shows every credit/debit with the running balance_after and
+// the description/reference recorded by credit_wallet / debit_wallet RPCs.
+// ---------------------------------------------------------------------------
+async function userLedger(req: Request) {
+  try {
+    const q = queryParams(req);
+    const userId = (q.get("user_id") || "").trim();
+    if (!userId) {
+      return json({ success: false, message: "user_id is required" }, 400);
+    }
+    const page = Math.max(1, parseInt(q.get("page") || "1") || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(q.get("limit") || "50") || 50));
+    const offset = (page - 1) * limit;
+
+    const [{ data: profile }, { data: wallet }] = await Promise.all([
+      getSupabase().from("profiles").select("id,full_name,email,phone_number").eq("id", userId).maybeSingle(),
+      getSupabase().from("wallets").select("balance").eq("user_id", userId).maybeSingle(),
+    ]);
+
+    const fallback = {
+      rows: [],
+      count: 0,
+      summary: { credited: 0, debited: 0 },
+      ledger_error: null as string | null,
+    };
+
+    let rows: any[] = [];
+    let count = 0;
+    let summary = { credited: 0, debited: 0 };
+    let ledgerError: string | null = null;
+    try {
+      const { data, count: c, error } = await getSupabase()
+        .from("wallet_transactions")
+        .select("*", { count: "exact" })
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(offset, offset + limit - 1);
+      if (error) throw error;
+      rows = data || [];
+      count = c || 0;
+
+      const { data: all } = await getSupabase()
+        .from("wallet_transactions")
+        .select("type,amount")
+        .eq("user_id", userId);
+      (all || []).forEach((r: any) => {
+        if (r.type === "credit") summary.credited += Number(r.amount || 0);
+        else summary.debited += Number(r.amount || 0);
+      });
+    } catch (e: any) {
+      ledgerError = e.message || String(e);
+      console.warn("⚠️ wallet_transactions unavailable:", ledgerError);
+    }
+
+    return json({
+      success: true,
+      data: ledgerError ? fallback.rows : rows,
+      profile: profile || null,
+      wallet_balance: wallet ? Number(wallet.balance || 0) : null,
+      summary: ledgerError ? fallback.summary : {
+        credited: Number(summary.credited.toFixed(2)),
+        debited: Number(summary.debited.toFixed(2)),
+      },
+      ledger_error: ledgerError,
+      pagination: {
+        page,
+        limit,
+        total: ledgerError ? 0 : count,
+        totalPages: ledgerError ? 0 : Math.ceil(count / limit),
+      },
+    });
+  } catch (err: any) {
+    console.error("❌ Admin user ledger error:", err.message);
     return json({ success: false, message: err.message }, 500);
   }
 }
@@ -635,11 +749,12 @@ async function updatePlanPrice(body: any, admin: any) {
 async function plansBigisub(req: Request) {
   try {
     const appNetId = Number(queryParams(req).get("network")) || null;
+    // NOTE: no is_active filter here — the admin must see INACTIVE plans too,
+    // otherwise a deactivated plan disappears and can never be re-enabled.
     let query = getSupabase()
       .from("data_plans")
       .select("*")
       .not("bigi_plan_id", "is", null)
-      .eq("is_active", true)
       .order("retail_price", { ascending: true });
     if (appNetId) query = query.eq("network_id", appNetId);
     const { data: plans, error } = await query;
@@ -667,11 +782,12 @@ async function plansBigisub(req: Request) {
 async function plansAlrahuz(req: Request) {
   try {
     const appNetId = Number(queryParams(req).get("network")) || null;
+    // NOTE: no is_active filter here — the admin must see INACTIVE plans too,
+    // otherwise a deactivated plan disappears and can never be re-enabled.
     let query = getSupabase()
       .from("data_plans")
       .select("*")
       .not("alrahuz_plan_id", "is", null)
-      .eq("is_active", true)
       .order("retail_price", { ascending: true });
     if (appNetId) query = query.eq("network_id", appNetId);
     const { data: plans, error } = await query;
@@ -691,6 +807,215 @@ async function plansAlrahuz(req: Request) {
   } catch (err: any) {
     console.error("❌ Alrahuz plans fetch error:", err.message);
     return json({ success: false, message: err.message, data: [] }, 500);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Wallet funding (payments) management
+//
+// Customer top-ups create a payments row (status=pending) and only the Squad
+// webhook / squad-verify / reconcile cron flips it to "success". When that
+// confirmation never lands a real charge is invisible and the user is never
+// credited, or an abandoned checkout sits pending forever. These routes give
+// the admin a full view of funding plus two safe actions:
+//   GET  /payments           list (paginated) + global stats
+//   POST /payments/verify    prove a pending payment against Squad and credit
+//                            the wallet ONLY when Squad confirms the charge
+//   POST /payments/cancel    close an abandoned pending payment as failed
+// ---------------------------------------------------------------------------
+
+async function payments(req: Request) {
+  try {
+    const q = queryParams(req);
+    const page = Math.max(1, parseInt(q.get("page") || "1") || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(q.get("limit") || "25") || 25));
+    const status = (q.get("status") || "").trim();
+    const search = (q.get("search") || "").trim();
+    const offset = (page - 1) * limit;
+
+    let query = getSupabase()
+      .from("payments")
+      .select("id,user_id,reference,amount,currency,status,payment_method,squad_response,created_at,updated_at", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (["pending", "success", "failed"].includes(status)) query = query.eq("status", status);
+
+    if (search) {
+      const clean = search.replace(/[(),"'\\]/g, " ").replace(/\s+/g, " ").trim();
+      if (clean) {
+        const { data: profs } = await getSupabase()
+          .from("profiles")
+          .select("id")
+          .or(`full_name.ilike.%${clean}%,email.ilike.%${clean}%,phone_number.ilike.%${clean}%`)
+          .limit(200);
+        const ids = (profs || []).map((p: any) => p.id).filter(Boolean);
+        const conds = [`reference.ilike.%${clean}%`];
+        if (ids.length) conds.push(`user_id.in.(${ids.join(",")})`);
+        query = query.or(conds.join(","));
+      }
+    }
+
+    const { data: rows, count, error } = await query;
+    if (error) throw error;
+
+    const userIds = [...new Set((rows || []).map((p: any) => p.user_id).filter(Boolean))];
+    const profileMap: Record<string, any> = {};
+    if (userIds.length) {
+      const { data: profs } = await getSupabase()
+        .from("profiles")
+        .select("id, full_name, email, phone_number")
+        .in("id", userIds);
+      (profs || []).forEach((p: any) => { profileMap[p.id] = p; });
+    }
+
+    const enriched = (rows || []).map((p: any) => ({
+      ...p,
+      profiles: profileMap[p.user_id] || null,
+    }));
+
+    // Global stats independent of the active filters, so the header chips stay
+    // truthful no matter what status/search is applied.
+    const stats = {
+      pending: { count: 0, amount: 0 },
+      success: { count: 0, amount: 0 },
+      failed: { count: 0, amount: 0 },
+    };
+    try {
+      const { data: allPays } = await getSupabase().from("payments").select("amount,status");
+      (allPays || []).forEach((p: any) => {
+        const key = (["pending", "success", "failed"].includes(p.status) ? p.status : "failed") as keyof typeof stats;
+        stats[key].count++;
+        stats[key].amount += Number(p.amount || 0);
+      });
+    } catch (e: any) {
+      console.warn("⚠️ payments stats failed:", e.message);
+    }
+
+    return json({
+      success: true,
+      data: enriched,
+      pagination: { page, limit, total: count || 0, totalPages: Math.ceil((count || 0) / limit) },
+      stats,
+    });
+  } catch (err: any) {
+    console.error("❌ Admin payments error:", err.message);
+    return json({ success: false, message: err.message }, 500);
+  }
+}
+
+async function paymentsVerify(body: any, admin: any) {
+  try {
+    const reference = String(body.reference || "").trim();
+    const id = String(body.id || "").trim();
+    if (!reference && !id) {
+      return json({ success: false, message: "payment reference or id is required" }, 400);
+    }
+
+    let q = getSupabase().from("payments").select("*");
+    if (reference) q = q.eq("reference", reference);
+    else q = q.eq("id", id);
+    const { data: payment, error: pe } = await q.maybeSingle();
+    if (pe || !payment) return json({ success: false, message: "Payment not found" }, 404);
+
+    if (payment.status === "success") {
+      return json({ success: true, verified: true, alreadyProcessed: true, message: "Payment already confirmed" });
+    }
+    if (payment.status !== "pending") {
+      return json({ success: false, verified: false, message: "Only pending payments can be verified" }, 400);
+    }
+
+    const amount = Number(payment.amount);
+    if (!amount || amount <= 0) {
+      return json({ success: false, verified: false, message: "Invalid payment amount" }, 500);
+    }
+
+    // Ask Squad for the ground truth on THIS reference. Never guess: the wallet
+    // is only credited when Squad confirms the charge actually succeeded.
+    const squad = await verifyPaymentWithSquad(payment.reference);
+    if (!squad.ok) {
+      console.error("❌ Admin squad-verify lookup failed:", payment.reference, squad.message);
+      return json({ success: false, verified: false, status: "unknown", message: squad.message });
+    }
+    if (!squad.successful) {
+      const st = ["failed", "reversed", "cancelled", "timeout"].includes(squad.status) ? "failed" : "pending";
+      return json({
+        success: false,
+        verified: false,
+        status: st,
+        message: `Payment not confirmed with Squad (${squad.status || "pending"})`,
+      });
+    }
+
+    const description = `${squadMethodLabel(payment.payment_method)} funding via Squad - Admin verified (${payment.reference})`;
+    const result = await claimAndCreditPayment(payment, amount, description, "admin-payments-verify");
+
+    if (result.alreadyProcessed) {
+      return json({ success: true, verified: true, alreadyProcessed: true, message: "Payment already confirmed" });
+    }
+    if (!result.ok) {
+      console.error("❌ Admin funding credit failed:", payment.reference, result.error);
+      return json({ success: false, verified: false, message: result.error }, 500);
+    }
+
+    console.log(`✅ Admin verified funding: user=${payment.user_id} ref=${payment.reference} new_balance=₦${result.newBalance} (by ${admin.email})`);
+    return json({
+      success: true,
+      verified: true,
+      newBalance: result.newBalance,
+      message: "Payment confirmed and wallet credited",
+    });
+  } catch (err: any) {
+    console.error("❌ Admin payments verify error:", err.message);
+    return json({ success: false, message: err.message }, 500);
+  }
+}
+
+async function paymentsCancel(body: any, admin: any) {
+  try {
+    const reference = String(body.reference || "").trim();
+    const id = String(body.id || "").trim();
+    const reason = String(body.reason || "").trim();
+    if (!reference && !id) {
+      return json({ success: false, message: "payment reference or id is required" }, 400);
+    }
+    if (!reason) {
+      return json({ success: false, message: "a reason is required to close a payment" }, 400);
+    }
+
+    let q = getSupabase().from("payments").select("*");
+    if (reference) q = q.eq("reference", reference);
+    else q = q.eq("id", id);
+    const { data: payment, error: pe } = await q.maybeSingle();
+    if (pe || !payment) return json({ success: false, message: "Payment not found" }, 404);
+
+    if (payment.status === "success") {
+      return json({ success: false, message: "Cannot close a payment that was already confirmed and credited" }, 400);
+    }
+    if (payment.status !== "pending") {
+      return json({ success: false, message: "Payment is already closed" }, 400);
+    }
+
+    const { error } = await getSupabase()
+      .from("payments")
+      .update({
+        status: "failed",
+        updated_at: new Date().toISOString(),
+        squad_response: {
+          closed_by: admin.email,
+          closed_at: new Date().toISOString(),
+          reason,
+        },
+      })
+      .eq("id", payment.id);
+    if (error) throw error;
+
+    console.log(`❌ Admin closed abandoned funding: ref=${payment.reference} by ${admin.email} (${reason})`);
+    return json({ success: true, message: "Payment marked as failed (abandoned / unconfirmed)" });
+  } catch (err: any) {
+    console.error("❌ Admin payments cancel error:", err.message);
+    return json({ success: false, message: err.message }, 500);
   }
 }
 

@@ -1,8 +1,150 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api/client'
 import { useToast } from '../components/Toast'
-import ConfirmModal from '../components/ConfirmModal'
-import { Search, ChevronLeft, ChevronRight, Loader2, DollarSign, Shield } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, Loader2, DollarSign, Shield, History, X, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react'
+import { fmtLagos } from '../lib/format'
+
+const fmt = (n) => '₦' + Number(n || 0).toLocaleString('en-NG')
+
+function LedgerModal({ user, onClose }) {
+  const [ledger, setLedger] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [page, setPage] = useState(1)
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1 })
+  const toast = useToast()
+
+  const fetchLedger = useCallback(async (p = 1) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await api.get(`/admin/users/ledger?user_id=${user.id}&page=${p}&limit=50`)
+      setLedger(res.data)
+      setPagination(res.data.pagination || { page: p, limit: 50, total: 0, totalPages: 1 })
+    } catch (err) {
+      setError(err.message)
+      toast.error(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [user.id, toast])
+
+  useEffect(() => { if (user) fetchLedger(1) }, [user, fetchLedger])
+
+  if (!user) return null
+
+  const summary = ledger?.summary
+  const walletBalance = ledger?.wallet_balance
+  const rows = ledger?.data || []
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+      <div className="relative w-full max-w-3xl max-h-[90vh] flex flex-col bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl toast-enter" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-slate-700">
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold text-slate-100 truncate">{user.full_name || 'User'}</h3>
+            <p className="text-sm text-slate-400 truncate">{user.email}{user.phone_number ? ` · ${user.phone_number}` : ''}</p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="text-right">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">Wallet Balance</p>
+              <p className="text-lg font-extrabold text-slate-100 font-mono tabular-nums">{walletBalance === null || walletBalance === undefined ? '—' : fmt(walletBalance)}</p>
+            </div>
+            <button onClick={onClose} className="p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-700" title="Close">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Lifetime summary */}
+        <div className="px-6 py-3 border-b border-slate-700 bg-slate-700/30 grid grid-cols-2 gap-3">
+          <div className="flex items-center gap-2 text-sm">
+            <TrendingUp size={15} className="text-emerald-400 shrink-0" />
+            <span className="text-slate-400">Lifetime credited:</span>
+            <span className="font-bold text-emerald-300 font-mono tabular-nums ml-auto">{summary ? fmt(summary.credited) : '—'}</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <TrendingDown size={15} className="text-red-400 shrink-0" />
+            <span className="text-slate-400">Lifetime debited:</span>
+            <span className="font-bold text-red-300 font-mono tabular-nums ml-auto">{summary ? fmt(summary.debited) : '—'}</span>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {ledger?.ledger_error && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg border border-amber-700 bg-amber-900/20 text-xs text-amber-200 mb-3">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              <span>Wallet audit trail is not available on this database: {ledger.ledger_error}</span>
+            </div>
+          )}
+          {error && !ledger?.ledger_error && (
+            <div className="px-3 py-2 rounded-lg border border-red-700 bg-red-900/20 text-xs text-red-300 mb-3">{error}</div>
+          )}
+
+          {loading && rows.length === 0 ? (
+            <div className="text-center py-14 text-slate-400 text-sm"><Loader2 size={20} className="animate-spin mx-auto mb-2 text-brand-400" /> Loading ledger…</div>
+          ) : rows.length === 0 && !ledger?.ledger_error ? (
+            <div className="text-center py-14 text-slate-400 text-sm">
+              <History size={26} className="mx-auto mb-2 text-slate-500" />
+              No wallet transactions yet for this user.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-700 text-left text-slate-400 text-xs uppercase tracking-wider">
+                    <th className="px-3 py-2 font-bold">Type</th>
+                    <th className="px-3 py-2 text-right font-bold">Amount</th>
+                    <th className="px-3 py-2 text-right font-bold">Balance After</th>
+                    <th className="px-3 py-2 font-bold">Description</th>
+                    <th className="px-3 py-2 font-bold">Reference</th>
+                    <th className="px-3 py-2 font-bold">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(t => (
+                    <tr key={t.id} className="border-b border-slate-800/60">
+                      <td className="px-3 py-2.5">
+                        {t.type === 'credit' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-900/50 text-emerald-300 border border-emerald-700"><TrendingUp size={11} /> CREDIT</span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-900/50 text-red-300 border border-red-700"><TrendingDown size={11} /> DEBIT</span>
+                        )}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right font-mono font-bold tabular-nums ${t.type === 'credit' ? 'text-emerald-300' : 'text-red-300'}`}>
+                        {t.type === 'credit' ? '+' : '−'}{fmt(t.amount)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-slate-300 tabular-nums">{fmt(t.balance_after)}</td>
+                      <td className="px-3 py-2.5 text-xs text-slate-300 max-w-[260px]"><span className="break-words">{t.description || '—'}</span></td>
+                      <td className="px-3 py-2.5 text-xs text-slate-400 font-mono truncate max-w-[140px]">{t.payment_reference || '—'}</td>
+                      <td className="px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap">{fmtLagos(t.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Footer pagination */}
+        <div className="flex items-center justify-between px-6 py-3 border-t border-slate-700">
+          <p className="text-xs text-slate-500">
+            {pagination.total > 0 ? `Page ${pagination.page} of ${pagination.totalPages} · ${pagination.total} total` : 'No records'}
+          </p>
+          {pagination.totalPages > 1 && (
+            <div className="flex gap-2">
+              <button onClick={() => { setPage(page - 1); fetchLedger(page - 1) }} disabled={page <= 1} className="btn-secondary !px-2.5 !py-1.5"><ChevronLeft size={14} /></button>
+              <button onClick={() => { setPage(page + 1); fetchLedger(page + 1) }} disabled={page >= pagination.totalPages} className="btn-secondary !px-2.5 !py-1.5"><ChevronRight size={14} /></button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function WalletAdjustModal({ open, user, onClose, onSuccess }) {
   const [action, setAction] = useState('credit')
@@ -105,6 +247,7 @@ export default function Users() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [adjustUser, setAdjustUser] = useState(null)
+  const [ledgerUser, setLedgerUser] = useState(null)
   const toast = useToast()
 
   // Debounce search
@@ -191,12 +334,21 @@ export default function Users() {
                       )}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <button
-                        onClick={() => setAdjustUser(u)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-all"
-                      >
-                        <DollarSign size={13} /> Adjust
-                      </button>
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => setLedgerUser(u)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-all"
+                          title="View wallet credit/debit history"
+                        >
+                          <History size={13} /> Ledger
+                        </button>
+                        <button
+                          onClick={() => setAdjustUser(u)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600 transition-all"
+                        >
+                          <DollarSign size={13} /> Adjust
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -236,6 +388,11 @@ export default function Users() {
         user={adjustUser}
         onClose={() => setAdjustUser(null)}
         onSuccess={() => fetchUsers(pagination.page)}
+      />
+
+      <LedgerModal
+        user={ledgerUser}
+        onClose={() => setLedgerUser(null)}
       />
     </div>
   )
