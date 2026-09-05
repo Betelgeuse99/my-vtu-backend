@@ -17,6 +17,7 @@ function LedgerModal({ user, onClose }) {
   const fetchLedger = useCallback(async (p = 1) => {
     setLoading(true)
     setError(null)
+    if (!user?.id) return
     try {
       const res = await api.get(`/admin/users/ledger?user_id=${user.id}&page=${p}&limit=50`)
       setLedger(res.data)
@@ -27,7 +28,7 @@ function LedgerModal({ user, onClose }) {
     } finally {
       setLoading(false)
     }
-  }, [user.id, toast])
+  }, [user?.id, toast])
 
   useEffect(() => { if (user) fetchLedger(1) }, [user, fetchLedger])
 

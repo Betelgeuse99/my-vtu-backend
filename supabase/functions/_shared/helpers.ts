@@ -1,4 +1,4 @@
-// Shared business helpers — faithful ports of the pure/DB helpers from the
+// Shared business helpers â€” faithful ports of the pure/DB helpers from the
 // Node Express server (server.js), so edge functions behave identically.
 
 import { getSupabase } from "./supabase.ts";
@@ -127,20 +127,22 @@ export async function logTx(args: {
   status?: string;
   reference?: string | null;
   provider?: string | null;
+  /** Data plan identifier (data_plans row) so admin/app can show which plan. */
+  plan_id?: string | number | null;
   /** Full provider response, persisted in the api_response JSONB column so the
    * app/web can re-render a detailed receipt (electricity token, cable plan,
    * units, raw response, etc.) from transaction history. */
   api_response?: unknown;
 }): Promise<void> {
-  const { user_id, title, service_type, amount, recipient, status, reference, provider, api_response } = args;
+  const { user_id, title, service_type, amount, recipient, status, reference, provider, plan_id, api_response } = args;
   const supabase = getSupabase();
   const ref = reference || null;
 
   // The base row must NEVER reference columns that may not exist yet on the
-  // live database (e.g. transactions.api_response). If the insert listed it,
-  // the whole row would be rejected and the purchase would silently never
-  // appear in the ledger — exactly what made "no transactions" happen. The
-  // provider response is attached in a SEPARATE best-effort update afterwards.
+  // live database (e.g. transactions.api_response / plan_id). If the insert
+  // listed them, the whole row would be rejected and the purchase would
+  // silently never appear in the ledger â€” exactly what made "no transactions"
+  // happen. Optional fields are attached in SEPARATE best-effort updates.
   const baseRow: Record<string, unknown> = {
     user_id,
     title: String(title || service_type || "Transaction"),
@@ -152,14 +154,22 @@ export async function logTx(args: {
     provider: provider || null,
   };
 
-  /** Best-effort: persist api_response only if the column exists. */
-  async function attachApiResponse(id: string | undefined, value: unknown): Promise<void> {
-    if (!id || value === undefined) return;
+  /** Best-effort update of a single optional column (ignores missing columns). */
+  async function tryAttach(id: string | undefined, patch: Record<string, unknown>): Promise<void> {
+    if (!id || Object.keys(patch).length === 0) return;
     try {
-      await supabase.from("transactions").update({ api_response: value }).eq("id", id);
+      await supabase.from("transactions").update(patch).eq("id", id);
     } catch (e: any) {
-      // Column not present yet (or other transient error) — never block the ledger write.
-      console.warn("⚠️ api_response not persisted (column may not exist):", e.message);
+      // Column not present yet (or other transient error) â€” never block the ledger write.
+      console.warn("âš ï¸ transactions optional field not persisted:", e.message);
+    }
+  }
+
+  async function attachOptional(id: string | undefined): Promise<void> {
+    if (!id) return;
+    if (api_response !== undefined) await tryAttach(id, { api_response });
+    if (plan_id !== undefined && plan_id !== null && String(plan_id).trim() !== "") {
+      await tryAttach(id, { plan_id: String(plan_id).trim() });
     }
   }
 
@@ -180,7 +190,7 @@ export async function logTx(args: {
         .maybeSingle();
       if (existing) {
         await patchStatus(existing.id);
-        await attachApiResponse(existing.id, api_response);
+        await attachOptional(existing.id);
         return;
       }
     }
@@ -190,7 +200,7 @@ export async function logTx(args: {
       .select("id")
       .maybeSingle();
     if (error) throw error;
-    await attachApiResponse(inserted?.id, api_response);
+    await attachOptional(inserted?.id);
   } catch (err: any) {
     if (ref && err?.code === "23505") {
       try {
@@ -202,14 +212,14 @@ export async function logTx(args: {
           .maybeSingle();
         if (existing) {
           await patchStatus(existing.id);
-          await attachApiResponse(existing.id, api_response);
+          await attachOptional(existing.id);
         }
       } catch (e2: any) {
-        console.warn("⚠️ transactions idempotent-repatch failed:", e2.message);
+        console.warn("âš ï¸ transactions idempotent-repatch failed:", e2.message);
       }
       return;
     }
-    console.warn("⚠️ transactions log failed:", err.message);
+    console.warn("âš ï¸ transactions log failed:", err.message);
   }
 }
 
@@ -236,8 +246,8 @@ export async function walletShortfallMessage(userId: string, amount: number): Pr
   const balance = Number(wallet.balance || 0);
   if (balance < amount) {
     return (
-      "Insufficient wallet balance — you need ₦" + amount.toLocaleString() +
-      " but your balance is ₦" + balance.toLocaleString() +
+      "Insufficient wallet balance â€” you need â‚¦" + amount.toLocaleString() +
+      " but your balance is â‚¦" + balance.toLocaleString() +
       ". Please fund your wallet first."
     );
   }
@@ -251,7 +261,7 @@ export async function debitWallet(userId: string, amount: number): Promise<numbe
     p_amount: amount,
   });
   if (error || data === null || data === undefined) {
-    console.error("❌ Wallet debit error:", error?.message || "0 rows updated");
+    console.error("âŒ Wallet debit error:", error?.message || "0 rows updated");
     return null;
   }
   return Number(data);
@@ -264,7 +274,7 @@ export async function creditWallet(userId: string, amount: number): Promise<numb
     p_amount: amount,
   });
   if (error || data === null || data === undefined) {
-    console.error("❌ Wallet credit error:", error?.message || "0 rows updated");
+    console.error("âŒ Wallet credit error:", error?.message || "0 rows updated");
     return null;
   }
   return Number(data);
@@ -292,7 +302,7 @@ export class AdminError extends Error {
   }
 }
 
-/** Admin gate — returns the admin user or throws AdminError (mirrors requireAdmin). */
+/** Admin gate â€” returns the admin user or throws AdminError (mirrors requireAdmin). */
 export async function requireAdmin(req: Request): Promise<any> {
   const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) throw new AdminError(401, "No token provided");

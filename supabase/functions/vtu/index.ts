@@ -390,6 +390,7 @@ async function purchaseData(req: Request, body: any) {
         status: "failed",
         reference: txRef,
         provider: canonicalNetworkName(network),
+        plan_id: planRow?.id ?? targetPlan,
       });
       return json({
         success: false,
@@ -410,6 +411,7 @@ async function purchaseData(req: Request, body: any) {
         status: "pending",
         reference: txRef,
         provider: canonicalNetworkName(network),
+        plan_id: planRow?.id ?? targetPlan,
       });
       return json({
         success: true,
@@ -432,6 +434,7 @@ async function purchaseData(req: Request, body: any) {
       api_response: response,
       reference: txRef,
       provider: canonicalNetworkName(network),
+      plan_id: planRow?.id ?? targetPlan,
     });
 
     console.log("✅ Data purchase (" + fulfillProvider + "): user " + userId + " plan " + providerPlanId + " -₦" + price + " (balance ₦" + newBalance + ")");
