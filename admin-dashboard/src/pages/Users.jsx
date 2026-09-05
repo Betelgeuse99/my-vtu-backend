@@ -246,6 +246,7 @@ export default function Users() {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
   const [adjustUser, setAdjustUser] = useState(null)
   const [ledgerUser, setLedgerUser] = useState(null)
   const toast = useToast()
@@ -258,6 +259,7 @@ export default function Users() {
 
   const fetchUsers = useCallback(async (page = 1) => {
     setLoading(true)
+    setLoadError(null)
     try {
       const params = new URLSearchParams({ page, limit: 20 })
       if (debouncedSearch) params.set('search', debouncedSearch)
@@ -265,13 +267,14 @@ export default function Users() {
       setUsers((res.data.data || []).sort((a, b) => (b.is_admin ? 1 : 0) - (a.is_admin ? 1 : 0)))
       setPagination(res.data.pagination)
     } catch (err) {
-      toast.error(err.message)
+      setLoadError(err?.response?.data?.message || err.message || 'Failed to load users')
+      if (toast) toast.error(err?.response?.data?.message || err.message)
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch])
+  }, [debouncedSearch, toast])
 
-  useEffect(() => { fetchUsers(1) }, [debouncedSearch])
+  useEffect(() => { fetchUsers(1) }, [debouncedSearch, fetchUsers])
 
   return (
     <div className="space-y-6">
@@ -291,6 +294,16 @@ export default function Users() {
           />
         </div>
       </div>
+
+      {loadError && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-lg border-2 border-red-700 bg-red-900/30">
+          <AlertTriangle size={18} className="text-red-400 shrink-0 mt-0.5" />
+          <div className="text-sm text-red-300 space-y-1">
+            <p>{loadError}</p>
+            <button onClick={() => fetchUsers(1)} className="underline decoration-red-400/50">Retry</button>
+          </div>
+        </div>
+      )}
 
       <div className="card overflow-hidden !p-0 bg-slate-800 border-2 border-slate-700">
         <div className="overflow-x-auto">

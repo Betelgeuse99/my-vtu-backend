@@ -133,9 +133,44 @@ export async function logTx(args: {
   api_response?: unknown;
 }): Promise<void> {
   const { user_id, title, service_type, amount, recipient, status, reference, provider, api_response } = args;
+  const supabase = getSupabase();
+  const ref = reference || null;
+
+  // The base row must NEVER reference columns that may not exist yet on the
+  // live database (e.g. transactions.api_response). If the insert listed it,
+  // the whole row would be rejected and the purchase would silently never
+  // appear in the ledger — exactly what made "no transactions" happen. The
+  // provider response is attached in a SEPARATE best-effort update afterwards.
+  const baseRow: Record<string, unknown> = {
+    user_id,
+    title: String(title || service_type || "Transaction"),
+    service_type,
+    amount: Number(amount) || 0,
+    recipient: String(recipient || "").trim(),
+    status: status || "successful",
+    reference: ref,
+    provider: provider || null,
+  };
+
+  /** Best-effort: persist api_response only if the column exists. */
+  async function attachApiResponse(id: string | undefined, value: unknown): Promise<void> {
+    if (!id || value === undefined) return;
+    try {
+      await supabase.from("transactions").update({ api_response: value }).eq("id", id);
+    } catch (e: any) {
+      // Column not present yet (or other transient error) — never block the ledger write.
+      console.warn("⚠️ api_response not persisted (column may not exist):", e.message);
+    }
+  }
+
+  async function patchStatus(id: string): Promise<void> {
+    const patch: Record<string, unknown> = { status: status || "successful" };
+    if (provider) patch.provider = provider;
+    if (title) patch.title = String(title);
+    await supabase.from("transactions").update(patch).eq("id", id);
+  }
+
   try {
-    const supabase = getSupabase();
-    const ref = reference || null;
     if (ref) {
       const { data: existing } = await supabase
         .from("transactions")
@@ -144,39 +179,30 @@ export async function logTx(args: {
         .eq("reference", ref)
         .maybeSingle();
       if (existing) {
-        const patch: Record<string, unknown> = { status: status || "successful" };
-        if (provider) patch.provider = provider;
-        if (title) patch.title = String(title);
-        if (api_response !== undefined) patch.api_response = api_response;
-        await supabase.from("transactions").update(patch).eq("id", existing.id);
+        await patchStatus(existing.id);
+        await attachApiResponse(existing.id, api_response);
         return;
       }
     }
-    await supabase.from("transactions").insert({
-      user_id,
-      title: String(title || service_type || "Transaction"),
-      service_type,
-      amount: Number(amount) || 0,
-      recipient: String(recipient || "").trim(),
-      status: status || "successful",
-      reference: ref,
-      provider: provider || null,
-      api_response: api_response !== undefined ? api_response : null,
-    });
+    const { data: inserted, error } = await supabase
+      .from("transactions")
+      .insert(baseRow)
+      .select("id")
+      .maybeSingle();
+    if (error) throw error;
+    await attachApiResponse(inserted?.id, api_response);
   } catch (err: any) {
-    if (reference && err?.code === "23505") {
+    if (ref && err?.code === "23505") {
       try {
-        const supabase = getSupabase();
         const { data: existing } = await supabase
           .from("transactions")
           .select("id")
           .eq("user_id", user_id)
-          .eq("reference", reference)
+          .eq("reference", ref)
           .maybeSingle();
         if (existing) {
-          const patch: Record<string, unknown> = { status: status || "successful" };
-          if (provider) patch.provider = provider;
-          await supabase.from("transactions").update(patch).eq("id", existing.id);
+          await patchStatus(existing.id);
+          await attachApiResponse(existing.id, api_response);
         }
       } catch (e2: any) {
         console.warn("⚠️ transactions idempotent-repatch failed:", e2.message);

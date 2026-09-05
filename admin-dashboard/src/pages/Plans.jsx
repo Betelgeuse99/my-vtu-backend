@@ -3,7 +3,10 @@ import { api } from '../api/client'
 import { useToast } from '../components/Toast'
 import { Loader2, Save, Wifi, ToggleLeft, ToggleRight } from 'lucide-react'
 
-const networkNames = { 1: 'MTN', 2: 'Glo', 3: 'Airtel', 4: '9mobile' }
+// Registry order used everywhere by the app/web/DB (data_plans.network_id):
+// 1=MTN, 2=Airtel, 3=Glo, 4=9mobile. This used to be reversed (2=Glo/3=Airtel),
+// which made the dashboard show Airtel bundles under "Glo" and vice-versa.
+const networkNames = { 1: 'MTN', 2: 'Airtel', 3: 'Glo', 4: '9mobile' }
 
 function EditRow({ plan, onSave, onCancel, provider }) {
   const [price, setPrice] = useState(plan.retail_price || '')
